@@ -1,10 +1,9 @@
 --[[
-    SHINDO LIFE PRO MOBILE FINAL – ĐẦY ĐỦ, ỔN ĐỊNH
-    - Giao diện kéo thả tự do.
-    - Auto Farm Level: tự nhận quest, đánh quái quest (tránh gỗ, boss, player), kết hợp M1 và skill.
-    - Auto Chakra: hồi khi dưới 30%.
-    - Spam Skill: bàn phím ảo Y,N,B,V dạng toggle (bật/tắt tự động spam skill đó).
-    - Auto Scroll: nhặt scroll.
+    SHINDO LIFE PRO MOBILE FINAL v2 – SỬA LỖI NÚT TOGGLE KHÔNG HIỆN MENU
+    - Nút "+" có thể kéo thả tự do.
+    - Chạm nhẹ (tap) để mở menu, kéo để di chuyển nút.
+    - Tất cả tính năng giữ nguyên: Auto Farm, Auto Chakra, Auto Scroll, Spam Skill ảo.
+    - Phân biệt quái/gỗ/boss/player, tự nhận/nộp quest, vị trí farm an toàn.
 ]]
 
 -- Dịch vụ
@@ -17,19 +16,17 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local TweenService = game:GetService("TweenService")
 
--- Remote
+-- Tìm Remote
 local function findRemote(name)
-    for _,v in ipairs(ReplicatedStorage:GetDescendants()) do
+    for _, v in ipairs(ReplicatedStorage:GetDescendants()) do
         if v:IsA("RemoteEvent") and v.Name == name then return v end
     end
     local rem = ReplicatedStorage:FindFirstChild("Remotes")
-    if rem then for _,v in ipairs(rem:GetDescendants()) do if v:IsA("RemoteEvent") and v.Name == name then return v end end end
+    if rem then for _, v in ipairs(rem:GetDescendants()) do if v:IsA("RemoteEvent") and v.Name == name then return v end end end
     return nil
 end
 
 local damageRemote = findRemote("Damage") or findRemote("CastSpell") or findRemote("Attack")
-local questAcceptRemote = findRemote("AcceptQuest") or findRemote("StartQuest")
-local questCompleteRemote = findRemote("CompleteQuest") or findRemote("FinishQuest")
 local rankUpRemote = findRemote("RankUp") or findRemote("Promote")
 local chakraRemote = findRemote("ChargeChakra") or findRemote("RechargeChakra")
 
@@ -38,46 +35,27 @@ local autoFarm = false
 local autoChakra = false
 local autoScroll = false
 local farmRange = 200
-local spamSkillName = "Skill1"  -- mặc định
-local m1Enabled = true  -- spam M1 cùng lúc
+local spamSkillName = "Skill1"
+local m1Enabled = true
 
--- Skill toggles cho các nút ảo
-local skillToggles = {
-    Y = false,
-    N = false,
-    B = false,
-    V = false
-}
--- Tên skill tương ứng (cấu hình được)
-local skillNames = {
-    Y = "SkillY",
-    N = "SkillN",
-    B = "SkillB",
-    V = "SkillV"
-}
+-- Bàn phím ảo skill toggle
+local skillToggles = { Y = false, N = false, B = false, V = false }
+local skillNames = { Y = "SkillY", N = "SkillN", B = "SkillB", V = "SkillV" }
 
--- Hàm kiểm tra quái hợp lệ (không phải gỗ, không phải boss, không phải player)
+-- Hàm kiểm tra quái hợp lệ
 local function isValidTarget(model)
     if not model or model == LocalPlayer.Character then return false end
     local hum = model:FindFirstChildOfClass("Humanoid")
     if not hum or hum.Health <= 0 then return false end
-    -- Bỏ qua player
     if Players:GetPlayerFromCharacter(model) then return false end
-    -- Bỏ qua boss (nếu tên chứa "boss")
     if model.Name:lower():find("boss") then return false end
-    -- Bỏ qua gỗ, bù nhìn
     local blacklist = {"wood", "log", "dummy", "training", "target", "maki"}
-    local lowerName = model.Name:lower()
-    for _, kw in ipairs(blacklist) do
-        if lowerName:find(kw) then return false end
-    end
-    -- Nếu là NPC quest (có dấu !) thì bỏ qua
+    local lname = model.Name:lower()
+    for _, kw in ipairs(blacklist) do if lname:find(kw) then return false end end
     local head = model:FindFirstChild("Head")
     if head then
         for _, gui in ipairs(head:GetChildren()) do
-            if gui:IsA("BillboardGui") and gui:FindFirstChild("TextLabel") and gui.TextLabel.Text == "!" then
-                return false
-            end
+            if gui:IsA("BillboardGui") and gui:FindFirstChild("TextLabel") and gui.TextLabel.Text == "!" then return false end
         end
     end
     return true
@@ -94,10 +72,7 @@ local function findNearestValidEnemy(range)
             local root = obj:FindFirstChild("HumanoidRootPart")
             if root then
                 local dist = (hrp.Position - root.Position).Magnitude
-                if dist < minDist then
-                    minDist = dist
-                    nearest = obj
-                end
+                if dist < minDist then minDist = dist; nearest = obj end
             end
         end
     end
@@ -115,9 +90,7 @@ local function findQuestNPC()
                         if gui:IsA("BillboardGui") then
                             local tl = gui:FindFirstChild("TextLabel")
                             local il = gui:FindFirstChild("ImageLabel")
-                            if (tl and tl.Text == "!") or (il and il.Image:find("exclamation")) then
-                                return obj
-                            end
+                            if (tl and tl.Text == "!") or (il and il.Image:find("exclamation")) then return obj end
                         end
                     end
                 end
@@ -129,20 +102,17 @@ end
 
 local function findScroll()
     for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and (obj.Name:lower():find("scroll") or obj.Name:lower():find("paper")) then
-            return obj
-        end
+        if obj:IsA("Model") and (obj.Name:lower():find("scroll") or obj.Name:lower():find("paper")) then return obj end
     end
     return nil
 end
 
--- Hàm tấn công
+-- Tấn công kết hợp M1 + skill
 local function attack(target, skillName)
     if not target then return end
     skillName = skillName or spamSkillName
-    if m1Enabled then  -- kết hợp M1
-        if damageRemote then
-            pcall(function() damageRemote:FireServer(target, "M1") end)
+    if m1Enabled then
+        if damageRemote then pcall(function() damageRemote:FireServer(target, "M1") end)
         else
             local root = target:FindFirstChild("HumanoidRootPart")
             if root then
@@ -156,8 +126,7 @@ local function attack(target, skillName)
         end
         task.wait(0.1)
     end
-    if damageRemote then
-        pcall(function() damageRemote:FireServer(target, skillName) end)
+    if damageRemote then pcall(function() damageRemote:FireServer(target, skillName) end)
     else
         local root = target:FindFirstChild("HumanoidRootPart")
         if root then
@@ -172,94 +141,67 @@ local function attack(target, skillName)
 end
 
 local function chargeChakra()
-    if chakraRemote then
-        pcall(function() chakraRemote:FireServer() end)
-    else
-        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.C, false, game)
-        task.wait(0.1)
-        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.C, false, game)
-    end
+    if chakraRemote then pcall(function() chakraRemote:FireServer() end)
+    else VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.C, false, game) task.wait(0.1) VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.C, false, game) end
 end
 
--- Đọc chakra (giả định tồn tại NumberValue "Chakra" trong Character)
 local function getChakraPercent()
     local char = LocalPlayer.Character
     if not char then return 100 end
-    local chakraValue = char:FindFirstChild("Chakra")  -- có thể là NumberValue
-    if chakraValue and chakraValue:IsA("NumberValue") then
-        local maxChakra = 100  -- mặc định
-        local maxVal = char:FindFirstChild("MaxChakra") or char:FindFirstChild("MaxChakraValue")
-        if maxVal and maxVal:IsA("NumberValue") then maxChakra = maxVal.Value end
-        return (chakraValue.Value / maxChakra) * 100
+    local val = char:FindFirstChild("Chakra")
+    if val and val:IsA("NumberValue") then
+        local max = char:FindFirstChild("MaxChakra") or char:FindFirstChild("MaxChakraValue")
+        local maxVal = max and max:IsA("NumberValue") and max.Value or 100
+        return (val.Value / maxVal) * 100
     end
     return 100
 end
 
--- Auto Farm (tự nhận quest -> farm)
+-- Auto Farm (nhận quest, đánh quái)
 local farmThread
 function toggleAutoFarm()
     autoFarm = not autoFarm
     if autoFarm then
         farmThread = task.spawn(function()
             while autoFarm do
-                -- Tìm NPC quest
                 local npc = findQuestNPC()
                 if npc then
                     local npcHRP = npc:FindFirstChild("HumanoidRootPart")
-                    -- Di chuyển đến NPC
-                    if npcHRP then
-                        TweenService:Create(LocalPlayer.Character.HumanoidRootPart, TweenInfo.new(0.5), {CFrame = npcHRP.CFrame + Vector3.new(0,3,5)}):Play()
-                    end
+                    if npcHRP then TweenService:Create(LocalPlayer.Character.HumanoidRootPart, TweenInfo.new(0.5), {CFrame = npcHRP.CFrame + Vector3.new(0,3,5)}):Play() end
                     task.wait(0.5)
-                    -- Click NPC
                     local head = npc:FindFirstChild("Head")
                     if head then
                         local pos = Workspace.CurrentCamera:WorldToViewportPoint(head.Position)
-                        VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 1)
-                        task.wait(0.1)
-                        VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 1)
+                        VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 1) task.wait(0.1) VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 1)
                     end
                     task.wait(1.5)
-                    -- Tìm và click Accept
                     local pg = LocalPlayer:FindFirstChild("PlayerGui")
                     local acceptBtn = pg and (pg:FindFirstChild("Accept") or pg:FindFirstChild("Yes"))
                     if acceptBtn and acceptBtn:IsA("TextButton") then
                         local btnPos = acceptBtn.AbsolutePosition + acceptBtn.AbsoluteSize/2
-                        VirtualInputManager:SendMouseButtonEvent(btnPos.X, btnPos.Y, 0, true, game, 1)
-                        task.wait(0.1)
-                        VirtualInputManager:SendMouseButtonEvent(btnPos.X, btnPos.Y, 0, false, game, 1)
+                        VirtualInputManager:SendMouseButtonEvent(btnPos.X, btnPos.Y, 0, true, game, 1) task.wait(0.1) VirtualInputManager:SendMouseButtonEvent(btnPos.X, btnPos.Y, 0, false, game, 1)
                     end
                     task.wait(1)
-                    -- Farm quái quest (lặp cho đến khi hoàn thành, thường khoảng 15s hoặc dựa vào GUI quest hoàn thành)
                     local startTime = tick()
-                    while autoFarm and tick() - startTime < 20 do -- thời gian farm an toàn
+                    while autoFarm and tick() - startTime < 20 do
                         local target = findNearestValidEnemy(200)
                         if target then
-                            -- Dịch chuyển xuống dưới chân quái (không bay)
                             TweenService:Create(LocalPlayer.Character.HumanoidRootPart, TweenInfo.new(0.2), {CFrame = target.HumanoidRootPart.CFrame * CFrame.new(0, -2, 0)}):Play()
                             attack(target, spamSkillName)
                         end
                         task.wait(0.3)
                     end
-                    -- Quay lại NPC nộp quest
-                    if npcHRP then
-                        TweenService:Create(LocalPlayer.Character.HumanoidRootPart, TweenInfo.new(0.5), {CFrame = npcHRP.CFrame + Vector3.new(0,3,5)}):Play()
-                    end
+                    if npcHRP then TweenService:Create(LocalPlayer.Character.HumanoidRootPart, TweenInfo.new(0.5), {CFrame = npcHRP.CFrame + Vector3.new(0,3,5)}):Play() end
                     task.wait(0.5)
                     if head then
                         local pos = Workspace.CurrentCamera:WorldToViewportPoint(head.Position)
-                        VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 1)
-                        task.wait(0.1)
-                        VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 1)
+                        VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 1) task.wait(0.1) VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 1)
                     end
                     task.wait(1.5)
-                    -- Click Complete nếu có
                     local completeBtn = pg and (pg:FindFirstChild("Complete") or pg:FindFirstChild("Claim"))
                     if completeBtn and completeBtn:IsA("TextButton") then
                         local btnPos = completeBtn.AbsolutePosition + completeBtn.AbsoluteSize/2
-                        VirtualInputManager:SendMouseButtonEvent(btnPos.X, btnPos.Y, 0, true, game, 1)
-                        task.wait(0.1)
-                        VirtualInputManager:SendMouseButtonEvent(btnPos.X, btnPos.Y, 0, false, game, 1)
+                        VirtualInputManager:SendMouseButtonEvent(btnPos.X, btnPos.Y, 0, true, game, 1) task.wait(0.1) VirtualInputManager:SendMouseButtonEvent(btnPos.X, btnPos.Y, 0, false, game, 1)
                     end
                     task.wait(2)
                 else
@@ -279,14 +221,11 @@ function toggleAutoChakra()
     if autoChakra then
         chakraThread = task.spawn(function()
             while autoChakra do
-                if getChakraPercent() < 30 then
-                    chargeChakra()
-                end
+                if getChakraPercent() < 30 then chargeChakra() end
                 task.wait(1)
             end
         end)
-    else
-        if chakraThread then task.cancel(chakraThread) end
+    else if chakraThread then task.cancel(chakraThread) end
     end
 end
 
@@ -309,16 +248,15 @@ function toggleAutoScroll()
                 task.wait(0.5)
             end
         end)
-    else
-        if scrollThread then task.cancel(scrollThread) end
+    else if scrollThread then task.cancel(scrollThread) end
     end
 end
 
--- Skill Toggle buttons
-local function createSkillToggle(key)
+-- Bàn phím ảo skill toggle
+local function createSkillToggle(key, position)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(0, 50, 0, 50)
-    btn.Position = keyPositions[key]  -- định nghĩa sau
+    btn.Position = position
     btn.BackgroundColor3 = Color3.fromRGB(100,149,237)
     btn.TextColor3 = Color3.new(1,1,1)
     btn.Font = Enum.Font.SourceSansBold
@@ -337,20 +275,13 @@ local function createSkillToggle(key)
     return btn
 end
 
--- Vị trí nút kỹ năng (tùy chỉnh)
-local keyPositions = {
-    Y = UDim2.new(0.02, 0, 0, 5),
-    N = UDim2.new(0.18, 0, 0, 5),
-    B = UDim2.new(0.34, 0, 0, 5),
-    V = UDim2.new(0.50, 0, 0, 5)
-}
-
--- Giao diện kéo thả
+-- Giao diện
 local mainGui = Instance.new("ScreenGui")
 mainGui.Name = "ShindoProFinal"
 mainGui.ResetOnSpawn = false
 mainGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
+-- Nút toggle kéo thả + tap
 local toggleBtn = Instance.new("TextButton")
 toggleBtn.Size = UDim2.new(0, 70, 0, 70)
 toggleBtn.Position = UDim2.new(0, 10, 0.5, -35)
@@ -367,29 +298,43 @@ toggleBtn.AutoButtonColor = false
 toggleBtn.Parent = mainGui
 Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0,12)
 
--- Kéo thả nút toggle và menu
-local function makeDraggable(guiObject)
-    local dragging = false
-    local dragStartPos
-    local startPos
-    guiObject.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            dragStartPos = input.Position
-            startPos = guiObject.Position
+-- Hệ thống kéo / tap cho nút toggle
+local dragStartPos, startPos, dragStartTime, isDrag = nil, nil, nil, false
+local clickThreshold = 0.3 -- 0.3 giây
+local moveThreshold = 5 -- pixel
+
+toggleBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        isDrag = true
+        dragStartPos = input.Position
+        startPos = toggleBtn.Position
+        dragStartTime = tick()
+    end
+end)
+
+toggleBtn.InputChanged:Connect(function(input)
+    if isDrag and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
+        local delta = input.Position - dragStartPos
+        -- Nếu vượt ngưỡng thì coi là kéo, không phải tap
+        if math.abs(delta.X) > moveThreshold or math.abs(delta.Y) > moveThreshold then
+            isDrag = false -- sau này sẽ không coi là tap nữa
         end
-    end)
-    guiObject.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
-            local delta = input.Position - dragStartPos
-            guiObject.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-        end
-    end)
-    guiObject.InputEnded:Connect(function()
-        dragging = false
-    end)
-end
-makeDraggable(toggleBtn)
+        toggleBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+toggleBtn.InputEnded:Connect(function(input)
+    if not isDrag then return end
+    local delta = input.Position - dragStartPos
+    local elapsed = tick() - dragStartTime
+    -- Nếu di chuyển ít và thời gian ngắn -> tap
+    if elapsed < clickThreshold and math.abs(delta.X) < moveThreshold and math.abs(delta.Y) < moveThreshold then
+        guiVisible = not guiVisible
+        mainFrame.Visible = guiVisible
+        toggleBtn.Text = guiVisible and "−" or "+"
+    end
+    isDrag = false
+end)
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Size = UDim2.new(0, 300, 0, 300)
@@ -399,12 +344,30 @@ mainFrame.BorderSizePixel = 0
 mainFrame.Visible = false
 mainFrame.Parent = mainGui
 Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0,12)
-makeDraggable(mainFrame)
 
+-- Cho phép kéo thả mainFrame nhưng không ảnh hưởng đến thao tác bên trong
+local mfDragPos, mfStartPos, mfDragging = nil, nil, false
+mainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        mfDragging = true
+        mfDragPos = input.Position
+        mfStartPos = mainFrame.Position
+        input.UserInputState = Enum.UserInputState.Began
+    end
+end)
+mainFrame.InputChanged:Connect(function(input)
+    if mfDragging and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
+        local delta = input.Position - mfDragPos
+        mainFrame.Position = UDim2.new(mfStartPos.X.Scale, mfStartPos.X.Offset + delta.X, mfStartPos.Y.Scale, mfStartPos.Y.Offset + delta.Y)
+    end
+end)
+mainFrame.InputEnded:Connect(function() mfDragging = false end)
+
+-- Nội dung menu
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1,0,0,35)
 title.BackgroundColor3 = Color3.fromRGB(173,216,230)
-title.Text = "Shindo Pro Final"
+title.Text = "Shindo Pro Final v2"
 title.TextColor3 = Color3.new(0,0,0.3)
 title.Font = Enum.Font.SourceSansBold
 title.TextSize = 16
@@ -416,7 +379,6 @@ content.Position = UDim2.new(0,0,0,35)
 content.BackgroundTransparency = 1
 content.Parent = mainFrame
 
--- Chức năng toggle
 local function addToggle(text, y, callback)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(1, -20, 0, 35)
@@ -438,19 +400,16 @@ local function addToggle(text, y, callback)
     end)
 end
 
-addToggle("Auto Farm", 10, function(on) toggleAutoFarm() end)
-addToggle("Auto Chakra", 50, function(on) toggleAutoChakra() end)
-addToggle("Auto Scroll", 90, function(on) toggleAutoScroll() end)
+addToggle("Auto Farm", 10, toggleAutoFarm)
+addToggle("Auto Chakra", 50, toggleAutoChakra)
+addToggle("Auto Scroll", 90, toggleAutoScroll)
 
--- Nhập tên skill chính
 local skillLabel = Instance.new("TextLabel")
 skillLabel.Position = UDim2.new(0,10,0,140)
 skillLabel.Size = UDim2.new(1,-20,0,25)
 skillLabel.BackgroundTransparency = 1
 skillLabel.Text = "Skill spam chính:"
-skillLabel.Font = Enum.Font.SourceSans
-skillLabel.TextSize = 14
-skillLabel.TextColor3 = Color3.new(0,0,0.3)
+skillLabel.Font = Enum.Font.SourceSans; skillLabel.TextSize = 14; skillLabel.TextColor3 = Color3.new(0,0,0.3)
 skillLabel.Parent = content
 
 local skillInput = Instance.new("TextBox")
@@ -459,29 +418,29 @@ skillInput.Size = UDim2.new(1,-20,0,30)
 skillInput.BackgroundColor3 = Color3.fromRGB(100,149,237)
 skillInput.TextColor3 = Color3.new(1,1,1)
 skillInput.Text = spamSkillName
-skillInput.Font = Enum.Font.SourceSans
-skillInput.TextSize = 14
+skillInput.Font = Enum.Font.SourceSans; skillInput.TextSize = 14
 skillInput.Parent = content
-skillInput.FocusLost:Connect(function()
-    spamSkillName = skillInput.Text ~= "" and skillInput.Text or "Skill1"
-end)
+skillInput.FocusLost:Connect(function() spamSkillName = skillInput.Text ~= "" and skillInput.Text or "Skill1" end)
 
--- Nút kỹ năng ảo (Y,N,B,V) và toggle
+-- Khung chứa nút kỹ năng ảo (luôn hiện)
 local keyFrame = Instance.new("Frame")
 keyFrame.Size = UDim2.new(1,0,0,60)
 keyFrame.Position = UDim2.new(0,0,1,-70)
 keyFrame.BackgroundTransparency = 1
 keyFrame.Parent = mainGui
 
-local skillButtons = {}
-for key, pos in pairs(keyPositions) do
-    skillButtons[key] = createSkillToggle(key)
-end
+local keyPositions = {
+    Y = UDim2.new(0.02, 0, 0, 5),
+    N = UDim2.new(0.18, 0, 0, 5),
+    B = UDim2.new(0.34, 0, 0, 5),
+    V = UDim2.new(0.50, 0, 0, 5)
+}
+for key, pos in pairs(keyPositions) do createSkillToggle(key, pos) end
 
--- Spam thread cho các skill được bật
+-- Spam skill (chạy nền)
 task.spawn(function()
     while true do
-        if autoFarm then  -- khi auto farm đang chạy, luôn spam skill chính
+        if autoFarm then
             local target = findNearestValidEnemy(farmRange)
             if target then attack(target, spamSkillName) end
         end
@@ -495,12 +454,4 @@ task.spawn(function()
     end
 end)
 
--- Kích hoạt menu toggle
-local guiVisible = false
-toggleBtn.Activated:Connect(function()
-    guiVisible = not guiVisible
-    mainFrame.Visible = guiVisible
-    toggleBtn.Text = guiVisible and "−" or "+"
-end)
-
-print("Shindo Life Pro Final loaded! Kéo thả menu thoải mái.")
+print("Shindo Pro Final v2: Kéo nút '+' để di chuyển, chạm nhẹ để mở menu.")
