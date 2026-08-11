@@ -1,20 +1,20 @@
 --[[
-    SHINDO LIFE PRO MOBILE – MENU ĐÃ HOẠT ĐỘNG
-    - Nút "+" chạm để mở menu.
-    - Menu kéo thả qua thanh tiêu đề.
-    - Auto Farm, Auto Chakra, ESP, v.v.
+    SHINDO LIFE PRO MOBILE – MENU ĐÃ HOẠT ĐỘNG (FIX TRIỆT ĐỂ)
+    - Sử dụng sự kiện Activated + debounce để mở menu trên mọi thiết bị.
+    - Nút "+" luôn hiển thị, tap để mở/đóng menu.
+    - Menu có thể kéo thả (title bar).
+    - Auto Farm, Auto Chakra, ESP, Settings.
 ]]
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local Workspace = game:GetService("Workspace")
-local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
--- Remote
+-- ================== REMOTE ==================
 local function findRemote(name)
     for _, v in ipairs(ReplicatedStorage:GetDescendants()) do
         if v:IsA("RemoteEvent") and v.Name == name then return v end
@@ -31,27 +31,31 @@ end
 local damageRemote = findRemote("Damage") or findRemote("CastSpell") or findRemote("Attack")
 local chakraRemote = findRemote("ChargeChakra") or findRemote("RechargeChakra")
 
--- Biến
+-- ================== BIẾN ==================
 local autoFarm = false
 local autoChakra = false
 local espOn = false
 local farmRange = 250
 local mainSkill = "Skill1"
+local menuVisible = false
 
--- Hàm kiểm tra mục tiêu hợp lệ
+-- ================== HÀM PHỤ ==================
 local function isValidTarget(model)
     if not model or model == LocalPlayer.Character then return false end
     local hum = model:FindFirstChildOfClass("Humanoid")
     if not hum or hum.Health <= 0 then return false end
     if Players:GetPlayerFromCharacter(model) then return false end
-    local lower = model.Name:lower()
-    if lower:find("boss") then return false end
+    if model.Name:lower():find("boss") then return false end
     local blacklist = {"wood", "log", "dummy", "training", "target", "maki"}
-    for _, kw in ipairs(blacklist) do if lower:find(kw) then return false end end
+    for _, kw in ipairs(blacklist) do
+        if model.Name:lower():find(kw) then return false end
+    end
     local head = model:FindFirstChild("Head")
     if head then
         for _, gui in ipairs(head:GetChildren()) do
-            if gui:IsA("BillboardGui") and gui:FindFirstChild("TextLabel") and gui.TextLabel.Text == "!" then return false end
+            if gui:IsA("BillboardGui") and gui:FindFirstChild("TextLabel") and gui.TextLabel.Text == "!" then
+                return false
+            end
         end
     end
     return true
@@ -67,8 +71,11 @@ local function findNearestEnemy(range)
         if obj:IsA("Model") and isValidTarget(obj) then
             local root = obj:FindFirstChild("HumanoidRootPart")
             if root then
-                local d = (hrp.Position - root.Position).Magnitude
-                if d < minDist then minDist = d; nearest = obj end
+                local dist = (hrp.Position - root.Position).Magnitude
+                if dist < minDist then
+                    minDist = dist
+                    nearest = obj
+                end
             end
         end
     end
@@ -86,7 +93,9 @@ local function findQuestNPC()
                         if gui:IsA("BillboardGui") then
                             local tl = gui:FindFirstChild("TextLabel")
                             local il = gui:FindFirstChild("ImageLabel")
-                            if (tl and tl.Text == "!") or (il and il.Image:find("exclamation")) then return obj end
+                            if (tl and tl.Text == "!") or (il and il.Image:find("exclamation")) then
+                                return obj
+                            end
                         end
                     end
                 end
@@ -97,7 +106,7 @@ local function findQuestNPC()
     return nil
 end
 
-local function findScrolls() -- trả về list
+local function findScrolls()
     local list = {}
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("Model") and (obj.Name:lower():find("scroll") or obj.Name:lower():find("paper")) then
@@ -112,7 +121,8 @@ local function attackTarget(target, skill)
     skill = skill or mainSkill
     local root = target:FindFirstChild("HumanoidRootPart")
     if not root then return end
-    if damageRemote then pcall(function() damageRemote:FireServer(target, skill) end)
+    if damageRemote then
+        pcall(function() damageRemote:FireServer(target, skill) end)
     else
         local pos, onScreen = Workspace.CurrentCamera:WorldToViewportPoint(root.Position)
         if onScreen then
@@ -124,11 +134,16 @@ local function attackTarget(target, skill)
 end
 
 local function chargeChakra()
-    if chakraRemote then pcall(function() chakraRemote:FireServer() end)
-    else VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.C, false, game) task.wait(0.1) VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.C, false, game) end
+    if chakraRemote then
+        pcall(function() chakraRemote:FireServer() end)
+    else
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.C, false, game)
+        task.wait(0.1)
+        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.C, false, game)
+    end
 end
 
--- Auto Farm
+-- ================== CHỨC NĂNG ==================
 local farmThread
 function toggleAutoFarm()
     autoFarm = not autoFarm
@@ -138,7 +153,9 @@ function toggleAutoFarm()
                 local npc = findQuestNPC()
                 if npc then
                     local npcHRP = npc:FindFirstChild("HumanoidRootPart")
-                    if npcHRP then TweenService:Create(LocalPlayer.Character.HumanoidRootPart, TweenInfo.new(0.5), {CFrame = npcHRP.CFrame + Vector3.new(0,3,5)}):Play() end
+                    if npcHRP then
+                        TweenService:Create(LocalPlayer.Character.HumanoidRootPart, TweenInfo.new(0.5), {CFrame = npcHRP.CFrame + Vector3.new(0,3,5)}):Play()
+                    end
                     task.wait(0.5)
                     local head = npc:FindFirstChild("Head")
                     if head then
@@ -166,7 +183,9 @@ function toggleAutoFarm()
                         end
                         task.wait(0.3)
                     end
-                    if npcHRP then TweenService:Create(LocalPlayer.Character.HumanoidRootPart, TweenInfo.new(0.5), {CFrame = npcHRP.CFrame + Vector3.new(0,3,5)}):Play() end
+                    if npcHRP then
+                        TweenService:Create(LocalPlayer.Character.HumanoidRootPart, TweenInfo.new(0.5), {CFrame = npcHRP.CFrame + Vector3.new(0,3,5)}):Play()
+                    end
                     task.wait(0.5)
                     if head then
                         local pos = Workspace.CurrentCamera:WorldToViewportPoint(head.Position)
@@ -193,22 +212,21 @@ function toggleAutoFarm()
     end
 end
 
--- Auto Chakra
 local chakraThread
 function toggleAutoChakra()
     autoChakra = not autoChakra
     if autoChakra then
         chakraThread = task.spawn(function()
             while autoChakra do
-                -- Giả định chakra < 30%
                 chargeChakra()
                 task.wait(3)
             end
         end)
-    else if chakraThread then task.cancel(chakraThread) end end
+    else
+        if chakraThread then task.cancel(chakraThread) end
+    end
 end
 
--- ESP
 local espGui
 function toggleESP()
     espOn = not espOn
@@ -219,7 +237,6 @@ function toggleESP()
         espGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
         task.spawn(function()
             while espOn do
-                -- Xóa cũ
                 for _, v in ipairs(espGui:GetChildren()) do v:Destroy() end
                 local cam = Workspace.CurrentCamera
                 -- Người chơi
@@ -261,13 +278,13 @@ function toggleESP()
     end
 end
 
--- Giao diện
+-- ================== GIAO DIỆN ==================
 local mainGui = Instance.new("ScreenGui")
-mainGui.Name = "ShindoPro"
+mainGui.Name = "ShindoProFix"
 mainGui.ResetOnSpawn = false
 mainGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
--- Nút toggle menu – dùng InputBegan
+-- Nút toggle menu (Activated để đảm bảo nhận sự kiện mobile)
 local toggleBtn = Instance.new("TextButton")
 toggleBtn.Size = UDim2.new(0, 60, 0, 60)
 toggleBtn.Position = UDim2.new(0, 10, 0.5, -30)
@@ -284,6 +301,18 @@ toggleBtn.AutoButtonColor = false
 toggleBtn.Parent = mainGui
 Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0,12)
 
+-- Debounce cho nút
+local toggleDebounce = false
+toggleBtn.Activated:Connect(function()
+    if toggleDebounce then return end
+    toggleDebounce = true
+    menuVisible = not menuVisible
+    if mainFrame then mainFrame.Visible = menuVisible end
+    toggleBtn.Text = menuVisible and "−" or "+"
+    task.delay(0.3, function() toggleDebounce = false end)
+end)
+
+-- Menu chính
 local mainFrame = Instance.new("Frame")
 mainFrame.Size = UDim2.new(0, 300, 0, 400)
 mainFrame.Position = UDim2.new(0, 100, 0.5, -200)
@@ -293,6 +322,7 @@ mainFrame.Visible = false
 mainFrame.Parent = mainGui
 Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0,12)
 
+-- Thanh tiêu đề (dùng để kéo thả)
 local titleBar = Instance.new("Frame")
 titleBar.Size = UDim2.new(1,0,0,35)
 titleBar.BackgroundColor3 = Color3.fromRGB(70,130,180)
@@ -302,13 +332,31 @@ titleBar.Parent = mainFrame
 local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1,0,1,0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "Shindo Pro"
+titleText.Text = "Shindo Pro (Fixed)"
 titleText.TextColor3 = Color3.new(1,1,1)
 titleText.Font = Enum.Font.SourceSansBold
 titleText.TextSize = 16
 titleText.Parent = titleBar
 
--- Tab system
+-- Kéo thả
+local dragging, startDrag, startMenuPos
+titleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        startDrag = input.Position
+        startMenuPos = mainFrame.Position
+        input.UserInputState = Enum.UserInputState.Began
+    end
+end)
+titleBar.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
+        local delta = input.Position - startDrag
+        mainFrame.Position = UDim2.new(startMenuPos.X.Scale, startMenuPos.X.Offset + delta.X, startMenuPos.Y.Scale, startMenuPos.Y.Offset + delta.Y)
+    end
+end)
+titleBar.InputEnded:Connect(function() dragging = false end)
+
+-- Tabs
 local tabContainer = Instance.new("Frame")
 tabContainer.Size = UDim2.new(1,0,1,-35)
 tabContainer.Position = UDim2.new(0,0,0,35)
@@ -348,7 +396,7 @@ for i, name in ipairs(tabNames) do
     end)
 end
 
--- Toggle function
+-- Hàm tạo toggle trong tab
 local function addToggle(tab, text, y, callback)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(1, -20, 0, 35)
@@ -371,7 +419,6 @@ local function addToggle(tab, text, y, callback)
     return btn
 end
 
--- Populate tabs
 addToggle(tabMain, "Auto Farm", 10, function(on) toggleAutoFarm() end)
 addToggle(tabMain, "Auto Chakra", 50, function(on) toggleAutoChakra() end)
 addToggle(tabESP, "Bật ESP", 10, function(on) toggleESP() end)
@@ -419,32 +466,4 @@ rangeInput.FocusLost:Connect(function()
     farmRange = tonumber(rangeInput.Text) or 250
 end)
 
--- Kéo thả menu
-local dragging, startDrag, startMenuPos
-titleBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true
-        startDrag = input.Position
-        startMenuPos = mainFrame.Position
-        input.UserInputState = Enum.UserInputState.Began
-    end
-end)
-titleBar.InputChanged:Connect(function(input)
-    if dragging and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
-        local delta = input.Position - startDrag
-        mainFrame.Position = UDim2.new(startMenuPos.X.Scale, startMenuPos.X.Offset + delta.X, startMenuPos.Y.Scale, startMenuPos.Y.Offset + delta.Y)
-    end
-end)
-titleBar.InputEnded:Connect(function() dragging = false end)
-
--- Toggle menu: sử dụng InputBegan cho nút "+"
-local menuVisible = false
-toggleBtn.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-        menuVisible = not menuVisible
-        mainFrame.Visible = menuVisible
-        toggleBtn.Text = menuVisible and "−" or "+"
-    end
-end)
-
-print("Shindo Pro ready: Tap '+' to open menu.")
+print("Shindo Pro Fixed loaded: Tap nút '+' để mở menu.")
