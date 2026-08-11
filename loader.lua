@@ -1,433 +1,85 @@
--- ============================================================
--- NJAY SHINDO LIFE 2 ULTIMATE SCRIPT - FULL CHỨC NĂNG
--- TÁC GIẢ: PALOFSC / NJAY
--- TƯƠNG THÍCH: DELTA X (MOBILE), MADIUM, VELOCITY, SYNAPSE
--- KHÔNG LỖI, KHÔNG LAG, CHẠY MƯỢT
--- ============================================================
-
--- ================== KHỞI TẠO ==================
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
-
-local player = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local humanoid = character:WaitForChild("Humanoid")
-local rootPart = character:WaitForChild("HumanoidRootPart")
-
--- ================== CẤU HÌNH ==================
-local cfg = {
-    FarmNPC = false,
-    FarmBoss = false,
-    SpamSkill = false,
-    AutoCollect = false,
-    AutoSpin = false,
-    AutoStat = false,
-    AutoRebirth = false,
-    SafeMode = true,
-    WalkSpeed = 85,
-    JumpPower = 85,
-    FarmRadius = 300,
-    BossRadius = 500,
-    SkillKeys = {"Z", "X", "C", "V", "B"}
-}
-
--- ================== HÀM TIỆN ÍCH ==================
-local function getChar()
-    return player.Character or player.CharacterAdded:Wait()
-end
-
-local function getRoot()
-    local c = getChar()
-    return c:WaitForChild("HumanoidRootPart")
-end
-
-local function getHumanoid()
-    local c = getChar()
-    return c:WaitForChild("Humanoid")
-end
-
--- TELEPORT AN TOÀN (KHÔNG TWEEN TRÊN MOBILE ĐỂ TRÁNH LAG)
-local function teleportTo(pos)
-    local root = getRoot()
-    if root then
-        root.CFrame = CFrame.new(pos)
-    end
-end
-
--- CLICK DETECTOR
-local function clickDetector(det)
-    if det and det:IsA("ClickDetector") then
-        fireclickdetector(det)
-        return true
-    end
-    return false
-end
-
--- ================== TÌM QUÁI - TỐI ƯU ==================
-local function findNearestNPC()
-    local root = getRoot()
-    if not root then return nil end
-    local nearest, minDist = nil, cfg.FarmRadius
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj:FindFirstChild("HumanoidRootPart") then
-            local hum = obj:FindFirstChild("Humanoid")
-            if hum and hum.Health and hum.Health > 0 then
-                local name = obj.Name or ""
-                if string.find(name, "NPC") or string.find(name, "Training") or string.find(name, "Shinobi") or string.find(name, "Sensei") then
-                    local hrp = obj:FindFirstChild("HumanoidRootPart")
-                    if hrp then
-                        local dist = (hrp.Position - root.Position).Magnitude
-                        if dist < minDist then
-                            minDist = dist
-                            nearest = obj
-                        end
-                    end
-                end
-            end
-        end
-    end
-    return nearest
-end
-
-local function findNearestBoss()
-    local root = getRoot()
-    if not root then return nil end
-    local nearest, minDist = nil, cfg.BossRadius
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj:FindFirstChild("HumanoidRootPart") then
-            local hum = obj:FindFirstChild("Humanoid")
-            if hum and hum.Health and hum.Health > 0 then
-                local name = obj.Name or ""
-                if string.find(name, "Boss") or string.find(name, "Shindai") or string.find(name, "Raion") or string.find(name, "Geno") or string.find(name, "Korashi") then
-                    local hrp = obj:FindFirstChild("HumanoidRootPart")
-                    if hrp then
-                        local dist = (hrp.Position - root.Position).Magnitude
-                        if dist < minDist then
-                            minDist = dist
-                            nearest = obj
-                        end
-                    end
-                end
-            end
-        end
-    end
-    return nearest
-end
-
--- KIỂM TRA NGƯỜI CHƠI GẦN (CHẾ ĐỘ AN TOÀN)
-local function isPlayerNear()
-    local root = getRoot()
-    if not root then return false end
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-            local dist = (p.Character.HumanoidRootPart.Position - root.Position).Magnitude
-            if dist < 100 then
-                return true
-            end
-        end
-    end
-    return false
-end
-
--- ================== TẤN CÔNG & SKILL ==================
-local function attackTarget(target)
-    if not target then return false end
-    local hrp = target:FindFirstChild("HumanoidRootPart")
-    if not hrp then return false end
-    
-    -- ƯU TIÊN CLICK DETECTOR
-    local det = target:FindFirstChildWhichIsA("ClickDetector") or hrp:FindFirstChildWhichIsA("ClickDetector")
-    if det then
-        return clickDetector(det)
-    end
-    
-    -- THỬ REMOTE EVENT
-    local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Attack")
-    if remote then
-        pcall(function() remote:FireServer("Attack", hrp.Position) end)
-        return true
-    end
-    return false
-end
-
-local function spamSkills()
-    if not cfg.SpamSkill then return end
-    local remote = ReplicatedStorage:FindFirstChild("Skill") or ReplicatedStorage:FindFirstChild("RemoteEvent")
-    if remote then
-        for _, key in ipairs(cfg.SkillKeys) do
-            pcall(function() remote:FireServer(key) end)
-        end
-    end
-end
-
-local function autoCollectItems()
-    if not cfg.AutoCollect then return end
-    local root = getRoot()
-    if not root then return end
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj:FindFirstChildWhichIsA("ClickDetector") then
-            local hrp = obj:FindFirstChild("HumanoidRootPart")
-            if hrp then
-                local dist = (hrp.Position - root.Position).Magnitude
-                if dist < 50 then
-                    clickDetector(obj:FindFirstChildWhichIsA("ClickDetector"))
-                end
-            end
-        end
-    end
-end
-
--- ================== CÁC CHỨC NĂNG PHỤ ==================
-local function doSpin()
-    local remote = ReplicatedStorage:FindFirstChild("Spin") or ReplicatedStorage:FindFirstChild("SpinRemote")
-    if remote then
-        pcall(function() remote:FireServer(1) end)
-    end
-end
-
-local function doStat()
-    local remote = ReplicatedStorage:FindFirstChild("Stat") or ReplicatedStorage:FindFirstChild("StatRemote")
-    if remote then
-        pcall(function()
-            remote:FireServer("Strength", 999)
-            remote:FireServer("Speed", 999)
-            remote:FireServer("Chakra", 999)
-        end)
-    else
-        local stats = player:FindFirstChild("Stats")
-        if stats then
-            for _, v in pairs(stats:GetChildren()) do
-                if v:IsA("NumberValue") then
-                    v.Value = 99999
-                end
-            end
-        end
-    end
-end
-
-local function doRebirth()
-    local remote = ReplicatedStorage:FindFirstChild("Rebirth") or ReplicatedStorage:FindFirstChild("RebirthEvent")
-    if remote then
-        pcall(function() remote:FireServer() end)
-    end
-end
-
--- ================== VÒNG LẶP CHÍNH ==================
--- FARM NPC
-spawn(function()
-    while wait(0.3) do
-        if cfg.FarmNPC then
-            if cfg.SafeMode and isPlayerNear() then
-                wait(1)
-                continue
-            end
-            local npc = findNearestNPC()
-            if npc then
-                local hrp = npc:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    teleportTo(hrp.Position + Vector3.new(0, 0, 5))
-                    wait(0.2)
-                    for i = 1, 5 do
-                        if npc:FindFirstChild("Humanoid") and npc.Humanoid.Health > 0 then
-                            attackTarget(npc)
-                            spamSkills()
-                            if cfg.AutoCollect then autoCollectItems() end
-                            wait(0.15)
-                        else
-                            break
-                        end
-                    end
-                end
-            else
-                teleportTo(Vector3.new(math.random(-300, 300), 50, math.random(-300, 300)))
-                wait(1)
-            end
-        end
-    end
-end)
-
--- FARM BOSS
-spawn(function()
-    while wait(0.3) do
-        if cfg.FarmBoss then
-            local boss = findNearestBoss()
-            if boss then
-                local hrp = boss:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    teleportTo(hrp.Position + Vector3.new(0, 0, 8))
-                    wait(0.3)
-                    while boss and boss:FindFirstChild("Humanoid") and boss.Humanoid.Health > 0 do
-                        attackTarget(boss)
-                        spamSkills()
-                        if cfg.AutoCollect then autoCollectItems() end
-                        wait(0.1)
-                        local newPos = boss.HumanoidRootPart.Position
-                        local root = getRoot()
-                        if root and (newPos - root.Position).Magnitude > 15 then
-                            teleportTo(newPos + Vector3.new(0, 0, 8))
-                        end
-                    end
-                    wait(2)
-                end
-            else
-                wait(3)
-            end
-        end
-    end
-end)
-
--- VÒNG LẶP PHỤ
-spawn(function() while wait(5) do if cfg.AutoSpin then doSpin() end end end)
-spawn(function() while wait(30) do if cfg.AutoStat then doStat() end end end)
-spawn(function() while wait(60) do if cfg.AutoRebirth then doRebirth() end end end)
-
--- ================== BẤT TỬ & TỰ HỒI SINH ==================
-local function godMode()
-    local hum = getHumanoid()
-    if hum then
-        hum.Health = math.huge
-        hum.MaxHealth = math.huge
-        hum.BreakJointsOnDeath = false
-        hum.Damaged:Connect(function(amount)
-            if hum then hum.Health = hum.Health + amount end
-        end)
-    end
-end
-godMode()
-
-player.CharacterAdded:Connect(function(chr)
-    wait(0.5)
-    character = chr
-    humanoid = chr:WaitForChild("Humanoid")
-    rootPart = chr:WaitForChild("HumanoidRootPart")
-    humanoid.WalkSpeed = cfg.WalkSpeed
-    humanoid.JumpPower = cfg.JumpPower
-    godMode()
-end)
-
--- ================== GIAO DIỆN ĐẸP - TỐI ƯU ==================
-local function createUI()
-    local gui = Instance.new("ScreenGui")
-    gui.Name = "NJAY_ShindoUI"
-    gui.ResetOnSpawn = false
-    gui.Parent = player:WaitForChild("PlayerGui")
-
-    local main = Instance.new("Frame")
-    main.Size = UDim2.new(0, 420, 0, 520)
-    main.Position = UDim2.new(0.5, -210, 0.15, 0)
-    main.BackgroundColor3 = Color3.fromRGB(10, 10, 25)
-    main.BackgroundTransparency = 0.05
-    main.BorderSizePixel = 2
-    main.BorderColor3 = Color3.fromRGB(0, 200, 255)
-    main.Active = true
-    main.Draggable = true
-    main.Parent = gui
-
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 45)
-    title.Text = "⚡ NJAY SHINDO ULTIMATE"
-    title.TextColor3 = Color3.fromRGB(0, 220, 255)
-    title.BackgroundTransparency = 1
-    title.Font = Enum.Font.GothamBold
-    title.TextScaled = true
-    title.Parent = main
-
-    local close = Instance.new("TextButton")
-    close.Size = UDim2.new(0, 30, 0, 30)
-    close.Position = UDim2.new(1, -35, 0, 5)
-    close.Text = "✕"
-    close.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
-    close.TextColor3 = Color3.fromRGB(255, 255, 255)
-    close.Font = Enum.Font.Bold
-    close.TextScaled = true
-    close.Parent = main
-    close.MouseButton1Click:Connect(function() gui.Enabled = false end)
-
-    local function addToggle(text, key, y, def)
-        local f = Instance.new("Frame")
-        f.Size = UDim2.new(0.92, 0, 0, 42)
-        f.Position = UDim2.new(0.04, 0, y, 0)
-        f.BackgroundColor3 = Color3.fromRGB(35, 35, 55)
-        f.BorderSizePixel = 1
-        f.BorderColor3 = Color3.fromRGB(70, 70, 100)
-        f.Parent = main
-
-        local l = Instance.new("TextLabel")
-        l.Size = UDim2.new(0.6, 0, 1, 0)
-        l.Text = text
-        l.TextColor3 = Color3.fromRGB(220, 220, 230)
-        l.BackgroundTransparency = 1
-        l.Font = Enum.Font.SourceSans
-        l.TextScaled = true
-        l.TextXAlignment = Enum.TextXAlignment.Left
-        l.Parent = f
-
-        local b = Instance.new("TextButton")
-        b.Size = UDim2.new(0.2, 0, 0.75, 0)
-        b.Position = UDim2.new(0.75, 0, 0.12, 0)
-        b.Text = def and "ON" or "OFF"
-        b.BackgroundColor3 = def and Color3.fromRGB(0, 130, 0) or Color3.fromRGB(100, 40, 40)
-        b.TextColor3 = Color3.fromRGB(255, 255, 255)
-        b.Font = Enum.Font.SourceSansBold
-        b.TextScaled = true
-        b.Parent = f
-
-        b.MouseButton1Click:Connect(function()
-            cfg[key] = not cfg[key]
-            b.Text = cfg[key] and "ON" or "OFF"
-            b.BackgroundColor3 = cfg[key] and Color3.fromRGB(0, 130, 0) or Color3.fromRGB(100, 40, 40)
-        end)
-    end
-
-    addToggle("🤖 Farm NPC", "FarmNPC", 0.10, false)
-    addToggle("👹 Farm Boss", "FarmBoss", 0.22, false)
-    addToggle("⚡ Spam Skill", "SpamSkill", 0.34, false)
-    addToggle("🧹 Auto Collect", "AutoCollect", 0.46, false)
-    addToggle("🌀 Auto Spin", "AutoSpin", 0.58, false)
-    addToggle("💪 Auto Stat", "AutoStat", 0.70, false)
-    addToggle("♻️ Auto Rebirth", "AutoRebirth", 0.82, false)
-
-    local teleBtn = Instance.new("TextButton")
-    teleBtn.Size = UDim2.new(0.35, 0, 0, 35)
-    teleBtn.Position = UDim2.new(0.04, 0, 0.92, 0)
-    teleBtn.Text = "📌 Tele Rand"
-    teleBtn.BackgroundColor3 = Color3.fromRGB(30, 70, 130)
-    teleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    teleBtn.Font = Enum.Font.SourceSansBold
-    teleBtn.TextScaled = true
-    teleBtn.Parent = main
-    teleBtn.MouseButton1Click:Connect(function()
-        teleportTo(Vector3.new(math.random(-600, 600), 50, math.random(-600, 600)))
-    end)
-
-    local resetBtn = Instance.new("TextButton")
-    resetBtn.Size = UDim2.new(0.35, 0, 0, 35)
-    resetBtn.Position = UDim2.new(0.55, 0, 0.92, 0)
-    resetBtn.Text = "🔄 Reset"
-    resetBtn.BackgroundColor3 = Color3.fromRGB(150, 30, 30)
-    resetBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    resetBtn.Font = Enum.Font.SourceSansBold
-    resetBtn.TextScaled = true
-    resetBtn.Parent = main
-    resetBtn.MouseButton1Click:Connect(function() player:LoadCharacter() end)
-
-    UserInputService.InputBegan:Connect(function(i, g)
-        if g then return end
-        if i.KeyCode == Enum.KeyCode.F1 then gui.Enabled = true end
-        if i.KeyCode == Enum.KeyCode.F2 then gui.Enabled = false end
-    end)
-
-    return gui
-end
-
--- ================== CHẠY UI ==================
-local gui = createUI()
-gui.Enabled = true
-
-print("[NJAY] Script ULTIMATE đã kích hoạt!")
-print("[NJAY] F1 mở GUI, F2 đóng GUI.")
-print("[NJAY] Các tính năng hoạt động ổn định trên Delta X.")
+-- Shindo Life Pro Mobile v2.0 – palofsc
+-- Dành cho Delta X, loadstring: loadstring(game:HttpGet("RAW_URL_HERE"))()
+local Players=game:GetService("Players")local LocalPlayer=Players.LocalPlayer
+local Workspace=game:GetService("Workspace")local UserInputService=game:GetService("UserInputService")
+local RunService=game:GetService("RunService")local TweenService=game:GetService("TweenService")
+local ReplicatedStorage=game:GetService("ReplicatedStorage")local CoreGui=game:GetService("CoreGui")
+local function getRemote(name)for _,v in pairs(ReplicatedStorage:GetDescendants())do if v:IsA("RemoteEvent")and v.Name==name then return v end end end
+local damageRemote=getRemote("Damage")or getRemote("CastSpell")or getRemote("Attack")
+local function findEnemy(r)local c=LocalPlayer.Character if not c then return nil end local hrp=c:FindFirstChild("HumanoidRootPart")if not hrp then return nil end local nearest,dist=nil,r or 150 for _,o in pairs(Workspace:GetDescendants())do if o:IsA("Model")and o~=c then local hum=o:FindFirstChildOfClass("Humanoid")if hum and hum.Health>0 then local root=o:FindFirstChild("HumanoidRootPart")if root then local d=(hrp.Position-root.Position).Magnitude if d<dist then dist=d nearest=o end end end end end return nearest end
+local function teleport(cf)local c=LocalPlayer.Character if c and c:FindFirstChild("HumanoidRootPart")then c.HumanoidRootPart.CFrame=cf end end
+local flyEnabled=false local bodyVel,bodyGyro local flySpeed=50
+local function toggleFly()flyEnabled=not flyEnabled local c=LocalPlayer.Character if not c then return end local hrp=c:FindFirstChild("HumanoidRootPart")if not hrp then return end if flyEnabled then bodyVel=Instance.new("BodyVelocity")bodyVel.MaxForce=Vector3.new(1,1,1)*math.huge bodyVel.Velocity=Vector3.new()bodyVel.Parent=hrp bodyGyro=Instance.new("BodyGyro")bodyGyro.MaxTorque=Vector3.new(1,1,1)*math.huge bodyGyro.CFrame=hrp.CFrame bodyGyro.Parent=hrp else if bodyVel then bodyVel:Destroy()end if bodyGyro then bodyGyro:Destroy()end end end
+local noclipEnabled=false local function toggleNoclip()noclipEnabled=not noclipEnabled local c=LocalPlayer.Character if c then for _,p in pairs(c:GetDescendants())do if p:IsA("BasePart")then p.CanCollide=not noclipEnabled end end end end
+local autoFarmEnabled=false local spamSkill=true local farmRange=150
+local function toggleAutoFarm()autoFarmEnabled=not autoFarmEnabled if autoFarmEnabled then spawn(function()while autoFarmEnabled do local t=findEnemy(farmRange)if t and t:FindFirstChild("HumanoidRootPart")then teleport(t.HumanoidRootPart.CFrame+Vector3.new(0,3,0))if spamSkill and damageRemote then pcall(function()damageRemote:FireServer(t,"Skill1")end)end end wait(0.1)end end)end end
+local autoBossEnabled=false local targetBoss="Tất cả"
+local function findBoss()for _,o in pairs(Workspace:GetDescendants())do if o:IsA("Model")and o.Name:lower():find("boss")then local hum=o:FindFirstChildOfClass("Humanoid")if hum and hum.Health>0 then if targetBoss=="Tất cả"then return o elseif o.Name:lower():find(targetBoss:lower())then return o end end end end return nil end
+local function toggleAutoBoss()autoBossEnabled=not autoBossEnabled if autoBossEnabled then spawn(function()while autoBossEnabled do local b=findBoss()if b and b:FindFirstChild("HumanoidRootPart")then teleport(b.HumanoidRootPart.CFrame+Vector3.new(0,5,0))if spamSkill and damageRemote then pcall(function()damageRemote:FireServer(b,"Ultimate")end)end end wait(0.2)end end)end end
+local autoScrollEnabled=false
+local function findScroll()for _,o in pairs(Workspace:GetDescendants())do if o:IsA("Model")and(o.Name:lower():find("scroll")or o.Name:lower():find("paper"))then return o end end end
+local function toggleAutoScroll()autoScrollEnabled=not autoScrollEnabled if autoScrollEnabled then spawn(function()while autoScrollEnabled do local s=findScroll()if s and s:FindFirstChild("Part")then teleport(s.Part.CFrame)wait(0.5)end wait(0.5)end end)end end
+-- GUI (thu gọn, nút toggle +)
+local ScreenGui=Instance.new("ScreenGui")ScreenGui.Name="ShindoPro"ScreenGui.ResetOnSpawn=false ScreenGui.Parent=LocalPlayer:WaitForChild("PlayerGui")
+local toggleBtn=Instance.new("TextButton")toggleBtn.Size=UDim2.new(0,50,0,50)toggleBtn.Position=UDim2.new(0,10,0.5,-25)
+toggleBtn.BackgroundColor3=Color3.new(0.2,0.2,0.2)toggleBtn.BackgroundTransparency=0.5 toggleBtn.Text="+" toggleBtn.TextColor3=Color3.new(1,1,1)toggleBtn.TextSize=30 toggleBtn.Font=Enum.Font.SourceSansBold toggleBtn.ZIndex=10 toggleBtn.Parent=ScreenGui
+local mainFrame=Instance.new("Frame")mainFrame.Size=UDim2.new(0,300,0,400)mainFrame.Position=UDim2.new(0,10,0.5,-200)mainFrame.BackgroundColor3=Color3.new(0.1,0.1,0.1)mainFrame.BorderSizePixel=0 mainFrame.Visible=false mainFrame.Parent=ScreenGui
+Instance.new("UICorner",mainFrame).CornerRadius=UDim.new(0,12)
+local title=Instance.new("TextLabel")title.Size=UDim2.new(1,0,0,30)title.BackgroundColor3=Color3.new(0.2,0.2,0.2)title.TextColor3=Color3.new(1,1,1)title.Font=Enum.Font.SourceSansBold title.Text="Shindo Pro v2.0"title.TextSize=16 title.Parent=mainFrame
+Instance.new("UICorner",title).CornerRadius=UDim.new(0,8)
+local tabContainer=Instance.new("Frame")tabContainer.Size=UDim2.new(1,0,1,-35)tabContainer.Position=UDim2.new(0,0,0,35)tabContainer.BackgroundTransparency=1 tabContainer.Parent=mainFrame
+local tabs={}
+local function addTabButton(name,pos)local b=Instance.new("TextButton")b.Size=UDim2.new(1/6,0,0,25)b.Position=UDim2.new((pos-1)/6,0,0,0)b.BackgroundColor3=Color3.new(0.3,0.3,0.3)b.TextColor3=Color3.new(1,1,1)b.Font=Enum.Font.SourceSans b.Text=name b.TextSize=14 b.Parent=title
+b.MouseButton1Click:Connect(function()for _,t in pairs(tabs)do t.Visible=false end tabs[name].Visible=true end)return b end
+local function addTab(name)local t=Instance.new("Frame")t.Size=UDim2.new(1,0,1,0)t.BackgroundTransparency=1 t.Visible=false t.Parent=tabContainer tabs[name]=t return t end
+local tabMain=addTab("Main")local tabFarm=addTab("Farm")local tabBoss=addTab("Boss")local tabScroll=addTab("Scroll")local tabTele=addTab("Tele")local tabSet=addTab("Set")
+addTabButton("Main",1)addTabButton("Farm",2)addTabButton("Boss",3)addTabButton("Scroll",4)addTabButton("Tele",5)addTabButton("Set",6)
+tabs["Main"].Visible=true
+-- Thêm nút chức năng vào tab Main
+local function addButton(parent,text,y,action)local b=Instance.new("TextButton")b.Size=UDim2.new(1,-20,0,35)b.Position=UDim2.new(0,10,0,y)b.BackgroundColor3=Color3.new(0.4,0.4,0.4)b.TextColor3=Color3.new(1,1,1)b.Font=Enum.Font.SourceSans b.Text=text..": OFF"b.TextSize=14 b.Parent=parent Instance.new("UICorner",b).CornerRadius=UDim.new(0,6)local e=false b.MouseButton1Click:Connect(function()e=not e b.Text=text..": "..(e and "ON"or"OFF")b.BackgroundColor3=e and Color3.new(0.2,0.8,0.2)or Color3.new(0.4,0.4,0.4)action(e)end)end
+addButton(tabMain,"Bay",10,toggleFly)
+addButton(tabMain,"Xuyên Tường",50,toggleNoclip)
+addButton(tabMain,"Auto Farm",90,toggleAutoFarm)
+addButton(tabMain,"Auto Boss",130,toggleAutoBoss)
+addButton(tabMain,"Auto Scroll",170,toggleAutoScroll)
+-- Tab Farm: spam skill, phạm vi
+local spamBtn=addButton(tabFarm,"Spam Skill",10,function(on)spamSkill=on end)spamBtn.Text="Spam Skill: ON"spamBtn.BackgroundColor3=Color3.new(0.2,0.8,0.2)
+local rangeBox=Instance.new("TextBox")rangeBox.Size=UDim2.new(1,-20,0,30)rangeBox.Position=UDim2.new(0,10,0,50)rangeBox.BackgroundColor3=Color3.new(0.3,0.3,0.3)rangeBox.TextColor3=Color3.new(1,1,1)rangeBox.PlaceholderText="Phạm vi (mặc định 150)"rangeBox.Text="150"rangeBox.Parent=tabFarm
+rangeBox.FocusLost:Connect(function()farmRange=tonumber(rangeBox.Text)or 150 end)
+-- Tab Boss: danh sách chọn
+local bossNames={"Tất cả","Akuma","Tengoku","Renshiki","Forge Boss"}
+for i,name in ipairs(bossNames)do local btn=Instance.new("TextButton")btn.Size=UDim2.new(1,-20,0,30)btn.Position=UDim2.new(0,10,0,10+(i-1)*35)btn.BackgroundColor3=Color3.new(0.4,0.4,0.4)btn.TextColor3=Color3.new(1,1,1)btn.Text=name btn.Parent=tabBoss btn.MouseButton1Click:Connect(function()targetBoss=name end)end
+-- Tab Scroll: làm mới + danh sách
+local refreshBtn=Instance.new("TextButton")refreshBtn.Size=UDim2.new(1,-20,0,30)refreshBtn.Position=UDim2.new(0,10,0,10)refreshBtn.BackgroundColor3=Color3.new(0.4,0.4,0.4)refreshBtn.TextColor3=Color3.new(1,1,1)refreshBtn.Text="Làm mới scroll"refreshBtn.Parent=tabScroll
+local scrollListFrame=Instance.new("ScrollingFrame")scrollListFrame.Size=UDim2.new(1,-20,1,-50)scrollListFrame.Position=UDim2.new(0,10,0,50)scrollListFrame.BackgroundColor3=Color3.new(0.2,0.2,0.2)scrollListFrame.CanvasSize=UDim2.new(0,0,0,0)scrollListFrame.Name="ScrollList"scrollListFrame.Parent=tabScroll
+refreshBtn.MouseButton1Click:Connect(function()local scrolls={}for _,o in pairs(Workspace:GetDescendants())do if o:IsA("Model")and(o.Name:lower():find("scroll")or o.Name:lower():find("paper"))then table.insert(scrolls,o)end end
+for _,v in ipairs(scrollListFrame:GetChildren())do if v:IsA("TextButton")then v:Destroy()end end
+for i,s in ipairs(scrolls)do local b=Instance.new("TextButton")b.Size=UDim2.new(1,0,0,25)b.Position=UDim2.new(0,0,0,(i-1)*25)b.Text=s.Name b.BackgroundColor3=Color3.new(0.3,0.3,0.3)b.TextColor3=Color3.new(1,1,1)b.Parent=scrollListFrame
+b.MouseButton1Click:Connect(function()if s:FindFirstChild("Part")then teleport(s.Part.CFrame)end end)end
+scrollListFrame.CanvasSize=UDim2.new(0,0,0,#scrolls*25)end)
+-- Tab Teleport
+local teleportLocations={["Làng Lá"]=CFrame.new(-300,10,200),["Làng Cát"]=CFrame.new(800,10,-400),["Làng Sương Mù"]=CFrame.new(200,10,900),["Thác Nước"]=CFrame.new(0,50,-800),["Rừng Chết"]=CFrame.new(-700,10,-300)}
+local teleFrame=Instance.new("ScrollingFrame")teleFrame.Size=UDim2.new(1,-20,1,-10)teleFrame.Position=UDim2.new(0,10,0,10)teleFrame.BackgroundColor3=Color3.new(0.2,0.2,0.2)teleFrame.CanvasSize=UDim2.new(0,0,0,0)teleFrame.Parent=tabTele
+local idx=0
+for name,cf in pairs(teleportLocations)do local b=Instance.new("TextButton")b.Size=UDim2.new(1,0,0,25)b.Position=UDim2.new(0,0,0,idx*25)b.Text=name b.BackgroundColor3=Color3.new(0.3,0.3,0.3)b.TextColor3=Color3.new(1,1,1)b.Parent=teleFrame
+b.MouseButton1Click:Connect(function()teleport(cf)end)idx=idx+1 end
+teleFrame.CanvasSize=UDim2.new(0,0,0,idx*25)
+-- Tab Settings
+local speedBox=Instance.new("TextBox")speedBox.Size=UDim2.new(1,-20,0,30)speedBox.Position=UDim2.new(0,10,0,10)speedBox.BackgroundColor3=Color3.new(0.3,0.3,0.3)speedBox.TextColor3=Color3.new(1,1,1)speedBox.PlaceholderText="Tốc độ bay (50)"speedBox.Text="50"speedBox.Parent=tabSet
+speedBox.FocusLost:Connect(function()flySpeed=tonumber(speedBox.Text)or 50 if bodyVel then bodyVel.MaxForce=Vector3.new(1,1,1)*math.huge end end)
+-- Toggle visibility
+local guiVisible=false
+toggleBtn.MouseButton1Click:Connect(function()guiVisible=not guiVisible mainFrame.Visible=guiVisible toggleBtn.Text=guiVisible and"-"or"+"end)
+-- Joystick fly đơn giản (dùng nút bay ẩn, tap để lên/xuống – mobile chủ yếu dùng Auto Farm nên bay tùy chọn)
+local joystickActive=false
+local joystickFrame=Instance.new("Frame")joystickFrame.Size=UDim2.new(0,120,0,120)joystickFrame.Position=UDim2.new(0,30,0.8,0)joystickFrame.BackgroundColor3=Color3.new(0,0,0)joystickFrame.BackgroundTransparency=0.7 joystickFrame.BorderSizePixel=0 joystickFrame.Visible=false joystickFrame.Parent=ScreenGui
+local joyBtn=Instance.new("ImageButton")joyBtn.Size=UDim2.new(0,50,0,50)joyBtn.Position=UDim2.new(0.5,-25,0.5,-25)joyBtn.BackgroundColor3=Color3.new(1,1,1)joyBtn.BackgroundTransparency=0.5 joyBtn.Image="rbxassetid://0"joyBtn.Parent=joystickFrame
+joyBtn.InputBegan:Connect(function(i)if i.UserInputType==Enum.UserInputType.Touch then joystickActive=true end end)
+joyBtn.InputChanged:Connect(function(i)if joystickActive and i.UserInputType==Enum.UserInputType.Touch then
+local delta=i.Position-joyBtn.AbsolutePosition-joyBtn.AbsoluteSize/2
+if bodyVel then bodyVel.Velocity=Vector3.new(delta.X,0,delta.Y)*flySpeed/50+Vector3.new(0,delta.Y>0 and flySpeed/2 or -flySpeed/2,0)end end end)
+joyBtn.InputEnded:Connect(function()joystickActive=false if bodyVel then bodyVel.Velocity=Vector3.new()end end)
+-- Bay toggle cập nhật hiển thị joystick
+local oldToggleFly=toggleFly
+toggleFly=function()oldToggleFly()joystickFrame.Visible=flyEnabled end
+print("Shindo Life Pro ready! Loadstring URL: (copy raw)")
