@@ -1,309 +1,272 @@
--- NJAY SCRIPT - SHINDO LIFE 2
--- BẢN FULL TÍNH NĂNG - TỐI ƯU DELTA X MOBILE
+-- =============================================
+-- NJAY KEY SYSTEM v1.0 - TỐI ƯU DELTA X MOBILE
+-- TÁC GIẢ: PALOFSC / NJAY
+-- =============================================
 
-local p = game:GetService("Players").LocalPlayer
-local c = p.Character or p.CharacterAdded:Wait()
-local h = c:WaitForChild("Humanoid")
-local r = c:WaitForChild("HumanoidRootPart")
-local rs = game:GetService("ReplicatedStorage")
-local ws = game:GetService("Workspace")
+-- CẤU HÌNH (SỬA THEO Ý BẠN)
+local CORRECT_KEY = "NJAYKeySystem2026"                    -- Key đúng
+local KEY_LINK = "https://example.com/getkey"              -- Link lấy key (nếu có)
+local SCRIPT_URL = "https://raw.githubusercontent.com/NamJay7/nhay-script/main/loader.lua" -- Script chính
+local SAVE_FILE = "NJAY_KeySave.json"                     -- Tên file lưu key
 
--- CẤU HÌNH
-local cfg = {
-    farmN = false,
-    farmB = false,
-    skill = false,
-    collect = false,
-    spin = false,
-    stat = false,
-    reb = false
-}
+-- SERVICES
+local TweenService = game:GetService("TweenService")
+local CoreGui = game:GetService("CoreGui")
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
 
--- HÀM TELEPORT (CFrame trực tiếp)
-local function tp(pos)
-    if r then r.CFrame = CFrame.new(pos) end
-end
-
--- HÀM CLICK
-local function click(det)
-    if det and det:IsA("ClickDetector") then fireclickdetector(det) end
-end
-
--- TÌM NPC GẦN NHẤT
-local function getN()
-    local n, d = nil, 300
-    for _, o in pairs(ws:GetDescendants()) do
-        if o:IsA("Model") and o:FindFirstChild("Humanoid") and o:FindFirstChild("HumanoidRootPart") and o.Humanoid.Health > 0 then
-            local nm = o.Name or ""
-            if string.find(nm, "NPC") or string.find(nm, "Training") or string.find(nm, "Shinobi") then
-                local dist = (o.HumanoidRootPart.Position - r.Position).Magnitude
-                if dist < d then d = dist n = o end
+-- =============================================
+-- CHECK SAVED KEY (24H AUTO-LOGIN)
+-- =============================================
+local function checkSavedKey()
+    if readfile and isfile and isfile(SAVE_FILE) then
+        local success, data = pcall(function()
+            return HttpService:JSONDecode(readfile(SAVE_FILE))
+        end)
+        if success and data and data.key and data.expire then
+            if data.key == CORRECT_KEY and os.time() < data.expire then
+                return true
             end
         end
     end
-    return n
+    return false
 end
 
--- TÌM BOSS GẦN NHẤT
-local function getB()
-    local n, d = nil, 500
-    for _, o in pairs(ws:GetDescendants()) do
-        if o:IsA("Model") and o:FindFirstChild("Humanoid") and o:FindFirstChild("HumanoidRootPart") and o.Humanoid.Health > 0 then
-            local nm = o.Name or ""
-            if string.find(nm, "Boss") or string.find(nm, "Shindai") or string.find(nm, "Raion") then
-                local dist = (o.HumanoidRootPart.Position - r.Position).Magnitude
-                if dist < d then d = dist n = o end
-            end
-        end
-    end
-    return n
-end
-
--- TẤN CÔNG
-local function atk(t)
-    if not t then return end
-    local hrp = t:FindFirstChild("HumanoidRootPart")
-    if hrp then
-        local det = t:FindFirstChildWhichIsA("ClickDetector") or hrp:FindFirstChildWhichIsA("ClickDetector")
-        if det then
-            click(det)
-        else
-            local rem = rs:FindFirstChild("RemoteEvent")
-            if rem then pcall(function() rem:FireServer("Attack", hrp.Position) end) end
-        end
-    end
-end
-
--- SPAM SKILL
-local function skill()
-    if not cfg.skill then return end
-    local rem = rs:FindFirstChild("Skill") or rs:FindFirstChild("RemoteEvent")
-    if rem then
+-- LƯU KEY
+local function saveKey(key)
+    if writefile then
+        local data = { key = key, expire = os.time() + 86400 }
         pcall(function()
-            rem:FireServer("Z")
-            rem:FireServer("X")
-            rem:FireServer("C")
+            writefile(SAVE_FILE, HttpService:JSONEncode(data))
         end)
     end
 end
 
--- AUTO COLLECT
-local function coll()
-    if not cfg.collect then return end
-    for _, o in pairs(ws:GetDescendants()) do
-        if o:IsA("Model") and o:FindFirstChildWhichIsA("ClickDetector") then
-            local dist = (o.HumanoidRootPart and o.HumanoidRootPart.Position - r.Position).Magnitude or 999
-            if dist < 50 then
-                click(o:FindFirstChildWhichIsA("ClickDetector"))
-            end
-        end
-    end
-end
-
--- AUTO SPIN
-local function doSpin()
-    local rem = rs:FindFirstChild("Spin")
-    if rem then pcall(function() rem:FireServer(1) end) end
-end
-
--- AUTO STAT
-local function doStat()
-    local rem = rs:FindFirstChild("Stat")
-    if rem then
-        pcall(function()
-            rem:FireServer("Strength", 999)
-            rem:FireServer("Speed", 999)
-        end)
-    else
-        local s = p:FindFirstChild("Stats")
-        if s then
-            for _, v in pairs(s:GetChildren()) do
-                if v:IsA("NumberValue") then v.Value = 99999 end
-            end
-        end
-    end
-end
-
--- AUTO REBIRTH
-local function doReb()
-    local rem = rs:FindFirstChild("Rebirth")
-    if rem then pcall(function() rem:FireServer() end) end
-end
-
--- ===== VÒNG LẶP FARM NPC =====
-spawn(function()
-    while wait(0.2) do
-        if cfg.farmN then
-            local n = getN()
-            if n then
-                tp(n.HumanoidRootPart.Position + Vector3.new(0, 0, 5))
-                wait(0.2)
-                for i = 1, 4 do
-                    atk(n)
-                    skill()
-                    if cfg.collect then coll() end
-                    wait(0.1)
-                end
-            else
-                tp(Vector3.new(math.random(-300, 300), 50, math.random(-300, 300)))
-                wait(0.5)
-            end
-        end
-    end
-end)
-
--- ===== VÒNG LẶP FARM BOSS =====
-spawn(function()
-    while wait(0.2) do
-        if cfg.farmB then
-            local b = getB()
-            if b then
-                tp(b.HumanoidRootPart.Position + Vector3.new(0, 0, 8))
-                wait(0.3)
-                while b and b.Humanoid and b.Humanoid.Health > 0 do
-                    atk(b)
-                    skill()
-                    if cfg.collect then coll() end
-                    wait(0.1)
-                    local np = b.HumanoidRootPart.Position
-                    if (np - r.Position).Magnitude > 15 then
-                        tp(np + Vector3.new(0, 0, 8))
-                    end
-                end
-                wait(2)
-            else
-                wait(3)
-            end
-        end
-    end
-end)
-
--- ===== VÒNG LẶP SPIN, STAT, REBIRTH =====
-spawn(function() while wait(5) do if cfg.spin then doSpin() end end end)
-spawn(function() while wait(30) do if cfg.stat then doStat() end end end)
-spawn(function() while wait(60) do if cfg.reb then doReb() end end end)
-
--- ===== BẤT TỬ =====
-h.Health = math.huge
-h.MaxHealth = math.huge
-h.BreakJointsOnDeath = false
-h.Damaged:Connect(function(a) h.Health = h.Health + a end)
-
-p.CharacterAdded:Connect(function(ch)
-    wait(0.5)
-    c = ch
-    h = c:WaitForChild("Humanoid")
-    r = c:WaitForChild("HumanoidRootPart")
-    h.Health = math.huge
-end)
-
--- ===== GIAO DIỆN UI =====
-local gui = Instance.new("ScreenGui")
-gui.Name = "NJAY_UI"
-gui.ResetOnSpawn = false
-gui.Parent = p:WaitForChild("PlayerGui")
-
-local main = Instance.new("Frame")
-main.Size = UDim2.new(0, 400, 0, 500)
-main.Position = UDim2.new(0.5, -200, 0.2, 0)
-main.BackgroundColor3 = Color3.fromRGB(12, 12, 30)
-main.BackgroundTransparency = 0.1
-main.BorderSizePixel = 2
-main.BorderColor3 = Color3.fromRGB(0, 200, 255)
-main.Active = true
-main.Draggable = true
-main.Parent = gui
-
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 45)
-title.Text = "⚡ NJAY SCRIPT FULL"
-title.TextColor3 = Color3.fromRGB(0, 220, 255)
-title.BackgroundTransparency = 1
-title.Font = Enum.Font.GothamBold
-title.TextScaled = true
-title.Parent = main
-
-local close = Instance.new("TextButton")
-close.Size = UDim2.new(0, 30, 0, 30)
-close.Position = UDim2.new(1, -35, 0, 5)
-close.Text = "X"
-close.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
-close.TextColor3 = Color3.fromRGB(255, 255, 255)
-close.Font = Enum.Font.Bold
-close.TextScaled = true
-close.Parent = main
-close.MouseButton1Click:Connect(function() gui.Enabled = false end)
-
--- HÀM TẠO TOGGLE CÓ CHỨC NĂNG THẬT
-local function toggle(text, key, y)
-    local f = Instance.new("Frame")
-    f.Size = UDim2.new(0.9, 0, 0, 45)
-    f.Position = UDim2.new(0.05, 0, y, 0)
-    f.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
-    f.BorderSizePixel = 1
-    f.BorderColor3 = Color3.fromRGB(80, 80, 120)
-    f.Parent = main
-
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(0.6, 0, 1, 0)
-    label.Text = text
-    label.TextColor3 = Color3.fromRGB(220, 220, 220)
-    label.BackgroundTransparency = 1
-    label.Font = Enum.Font.SourceSans
-    label.TextScaled = true
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.Parent = f
-
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0.2, 0, 0.7, 0)
-    btn.Position = UDim2.new(0.75, 0, 0.15, 0)
-    btn.Text = "OFF"
-    btn.BackgroundColor3 = Color3.fromRGB(100, 40, 40)
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.Font = Enum.Font.SourceSansBold
-    btn.TextScaled = true
-    btn.Parent = f
-
-    btn.MouseButton1Click:Connect(function()
-        cfg[key] = not cfg[key]
-        btn.Text = cfg[key] and "ON" or "OFF"
-        btn.BackgroundColor3 = cfg[key] and Color3.fromRGB(0, 130, 0) or Color3.fromRGB(100, 40, 40)
+-- TẢI SCRIPT CHÍNH
+local function loadMain()
+    local success, err = pcall(function()
+        loadstring(game:HttpGet(SCRIPT_URL))()
     end)
+    if not success then
+        warn("[NJAY] Lỗi tải script: " .. tostring(err))
+    end
 end
 
--- TẠO CÁC NÚT
-toggle("🤖 Farm NPC", "farmN", 0.10)
-toggle("👹 Farm Boss", "farmB", 0.22)
-toggle("⚡ Spam Skill", "skill", 0.34)
-toggle("🧹 Auto Collect", "collect", 0.46)
-toggle("🌀 Auto Spin", "spin", 0.58)
-toggle("💪 Auto Stat", "stat", 0.70)
-toggle("♻️ Auto Rebirth", "reb", 0.82)
+-- NẾU KEY HỢP LỆ, CHẠY LUÔN
+if checkSavedKey() then
+    print("[NJAY] Key đã lưu hợp lệ. Tự động chạy script.")
+    loadMain()
+    return
+end
 
--- NÚT TELEPORT RANDOM
-local btn1 = Instance.new("TextButton")
-btn1.Size = UDim2.new(0.35, 0, 0, 35)
-btn1.Position = UDim2.new(0.05, 0, 0.92, 0)
-btn1.Text = "📌 Tele Rand"
-btn1.BackgroundColor3 = Color3.fromRGB(30, 70, 130)
-btn1.TextColor3 = Color3.fromRGB(255, 255, 255)
-btn1.Font = Enum.Font.SourceSansBold
-btn1.TextScaled = true
-btn1.Parent = main
-btn1.MouseButton1Click:Connect(function()
-    tp(Vector3.new(math.random(-600, 600), 50, math.random(-600, 600)))
+-- =============================================
+-- GIAO DIỆN KEY SYSTEM (NẾU CHƯA CÓ KEY)
+-- =============================================
+
+-- XÓA UI CŨ NẾU CÓ
+if CoreGui:FindFirstChild("NJAY_KeyUI") then
+    CoreGui.NJAY_KeyUI:Destroy()
+end
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "NJAY_KeyUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = CoreGui or Players.LocalPlayer:WaitForChild("PlayerGui")
+
+-- MAIN FRAME
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 380, 0, 250)
+MainFrame.Position = UDim2.new(0.5, -190, 0.5, -125)
+MainFrame.BackgroundColor3 = Color3.fromRGB(12, 12, 28)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Parent = ScreenGui
+
+local Corner = Instance.new("UICorner", MainFrame)
+Corner.CornerRadius = UDim.new(0, 16)
+
+local Stroke = Instance.new("UIStroke", MainFrame)
+Stroke.Color = Color3.fromRGB(0, 180, 255)
+Stroke.Thickness = 1.5
+Stroke.Transparency = 0.3
+
+-- TITLE
+local Title = Instance.new("TextLabel", MainFrame)
+Title.Size = UDim2.new(1, 0, 0, 45)
+Title.Position = UDim2.new(0, 0, 0, 10)
+Title.BackgroundTransparency = 1
+Title.Font = Enum.Font.GothamBold
+Title.Text = "⚡ NJAY KEY SYSTEM"
+Title.TextColor3 = Color3.fromRGB(0, 220, 255)
+Title.TextSize = 20
+Title.TextScaled = true
+
+local Sub = Instance.new("TextLabel", MainFrame)
+Sub.Size = UDim2.new(1, 0, 0, 22)
+Sub.Position = UDim2.new(0, 0, 0, 52)
+Sub.BackgroundTransparency = 1
+Sub.Font = Enum.Font.Gotham
+Sub.Text = "Nhập key để kích hoạt script"
+Sub.TextColor3 = Color3.fromRGB(150, 150, 180)
+Sub.TextSize = 13
+
+-- INPUT
+local InputBox = Instance.new("Frame", MainFrame)
+InputBox.Size = UDim2.new(0.85, 0, 0, 40)
+InputBox.Position = UDim2.new(0.075, 0, 0.32, 0)
+InputBox.BackgroundColor3 = Color3.fromRGB(25, 25, 40)
+InputBox.BorderSizePixel = 0
+
+local InputCorner = Instance.new("UICorner", InputBox)
+InputCorner.CornerRadius = UDim.new(0, 8)
+
+local InputStroke = Instance.new("UIStroke", InputBox)
+InputStroke.Color = Color3.fromRGB(60, 60, 90)
+InputStroke.Thickness = 1
+
+local KeyInput = Instance.new("TextBox", InputBox)
+KeyInput.Size = UDim2.new(1, -16, 1, 0)
+KeyInput.Position = UDim2.new(0, 8, 0, 0)
+KeyInput.BackgroundTransparency = 1
+KeyInput.Font = Enum.Font.Gotham
+KeyInput.PlaceholderText = "Nhập key tại đây..."
+KeyInput.PlaceholderColor3 = Color3.fromRGB(100, 100, 130)
+KeyInput.Text = ""
+KeyInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+KeyInput.TextSize = 14
+KeyInput.ClearTextOnFocus = false
+
+-- BUTTON CONTAINER
+local BtnContainer = Instance.new("Frame", MainFrame)
+BtnContainer.Size = UDim2.new(0.85, 0, 0, 40)
+BtnContainer.Position = UDim2.new(0.075, 0, 0.54, 0)
+BtnContainer.BackgroundTransparency = 1
+
+-- SUBMIT BUTTON
+local SubmitBtn = Instance.new("TextButton", BtnContainer)
+SubmitBtn.Size = UDim2.new(0.48, 0, 1, 0)
+SubmitBtn.Position = UDim2.new(0, 0, 0, 0)
+SubmitBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 255)
+SubmitBtn.Font = Enum.Font.GothamBold
+SubmitBtn.Text = "KÍCH HOẠT"
+SubmitBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+SubmitBtn.TextSize = 13
+SubmitBtn.AutoButtonColor = false
+
+local SubmitCorner = Instance.new("UICorner", SubmitBtn)
+SubmitCorner.CornerRadius = UDim.new(0, 8)
+
+local BtnGrad = Instance.new("UIGradient", SubmitBtn)
+BtnGrad.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 140, 255)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(80, 50, 255))
+})
+
+-- GET KEY BUTTON
+local GetKeyBtn = Instance.new("TextButton", BtnContainer)
+GetKeyBtn.Size = UDim2.new(0.48, 0, 1, 0)
+GetKeyBtn.Position = UDim2.new(0.52, 0, 0, 0)
+GetKeyBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 55)
+GetKeyBtn.Font = Enum.Font.GothamBold
+GetKeyBtn.Text = "LẤY KEY 🔑"
+GetKeyBtn.TextColor3 = Color3.fromRGB(200, 200, 230)
+GetKeyBtn.TextSize = 13
+GetKeyBtn.AutoButtonColor = false
+
+local GetKeyCorner = Instance.new("UICorner", GetKeyBtn)
+GetKeyCorner.CornerRadius = UDim.new(0, 8)
+
+local GetKeyStroke = Instance.new("UIStroke", GetKeyBtn)
+GetKeyStroke.Color = Color3.fromRGB(80, 80, 120)
+GetKeyStroke.Thickness = 1
+
+-- STATUS LABEL
+local Status = Instance.new("TextLabel", MainFrame)
+Status.Size = UDim2.new(0.85, 0, 0, 22)
+Status.Position = UDim2.new(0.075, 0, 0.80, 0)
+Status.BackgroundTransparency = 1
+Status.Font = Enum.Font.GothamMedium
+Status.Text = ""
+Status.TextColor3 = Color3.fromRGB(255, 255, 255)
+Status.TextSize = 12
+
+-- =============================================
+-- ANIMATIONS & LOGIC
+-- =============================================
+
+-- HOVER EFFECTS
+SubmitBtn.MouseEnter:Connect(function()
+    TweenService:Create(SubmitBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(30, 160, 255)}):Play()
+end)
+SubmitBtn.MouseLeave:Connect(function()
+    TweenService:Create(SubmitBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(0, 140, 255)}):Play()
 end)
 
--- NÚT RESET CHARACTER
-local btn2 = Instance.new("TextButton")
-btn2.Size = UDim2.new(0.35, 0, 0, 35)
-btn2.Position = UDim2.new(0.55, 0, 0.92, 0)
-btn2.Text = "🔄 Reset"
-btn2.BackgroundColor3 = Color3.fromRGB(150, 30, 30)
-btn2.TextColor3 = Color3.fromRGB(255, 255, 255)
-btn2.Font = Enum.Font.SourceSansBold
-btn2.TextScaled = true
-btn2.Parent = main
-btn2.MouseButton1Click:Connect(function() p:LoadCharacter() end)
+GetKeyBtn.MouseEnter:Connect(function()
+    TweenService:Create(GetKeyBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(50, 50, 75)}):Play()
+end)
+GetKeyBtn.MouseLeave:Connect(function()
+    TweenService:Create(GetKeyBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(35, 35, 55)}):Play()
+end)
 
-print("[NJAY] Script FULL đã chạy! Bật tính năng trong GUI.")
+-- FOCUS INPUT
+KeyInput.Focused:Connect(function()
+    TweenService:Create(InputStroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(0, 180, 255)}):Play()
+end)
+KeyInput.FocusLost:Connect(function()
+    TweenService:Create(InputStroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(60, 60, 90)}):Play()
+end)
+
+-- GET KEY
+GetKeyBtn.MouseButton1Click:Connect(function()
+    if setclipboard then
+        setclipboard(KEY_LINK)
+        Status.TextColor3 = Color3.fromRGB(0, 220, 180)
+        Status.Text = "✅ Đã sao chép link lấy key!"
+    else
+        Status.TextColor3 = Color3.fromRGB(255, 200, 80)
+        Status.Text = "🔗 Link: " .. KEY_LINK
+    end
+end)
+
+-- SHAKE EFFECT
+local function shake()
+    local orig = UDim2.new(0.5, -190, 0.5, -125)
+    local off = 8
+    for _ = 1, 3 do
+        for _, x in ipairs({off, -off, off/2, -off/2}) do
+            MainFrame.Position = orig + UDim2.new(0, x, 0, 0)
+            task.wait(0.04)
+        end
+    end
+    MainFrame.Position = orig
+end
+
+-- SUBMIT
+SubmitBtn.MouseButton1Click:Connect(function()
+    local input = KeyInput.Text
+    if input == CORRECT_KEY then
+        -- ĐÚNG KEY
+        saveKey(input)
+        Status.TextColor3 = Color3.fromRGB(80, 255, 120)
+        Status.Text = "✅ Key chính xác! Đang tải script..."
+        TweenService:Create(Stroke, TweenInfo.new(0.3), {Color = Color3.fromRGB(80, 255, 120)}):Play()
+        task.wait(1)
+        -- ẨN UI
+        TweenService:Create(MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back), {Size = UDim2.new(0, 0, 0, 0)}):Play()
+        task.wait(0.4)
+        ScreenGui:Destroy()
+        loadMain()
+    else
+        -- SAI KEY
+        Status.TextColor3 = Color3.fromRGB(255, 70, 70)
+        Status.Text = "❌ Key sai! Vui lòng thử lại."
+        TweenService:Create(InputStroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(255, 60, 60)}):Play()
+        shake()
+        task.wait(0.3)
+        TweenService:Create(InputStroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(60, 60, 90)}):Play()
+    end
+end)
+
+print("[NJAY] Key System sẵn sàng. F1/F2 không dùng trong UI này.")
