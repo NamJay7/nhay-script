@@ -1,10 +1,14 @@
 --[[
-    SHINDO LIFE PRO MOBILE v3.3 – HOÀN THIỆN THEO YÊU CẦU
-    - ĐÃ BỎ FLY & XUYÊN TƯỜNG (KHÔNG CẦN THIẾT)
-    - GIỮ NGUYÊN CƠ CHẾ TOGGLE HOẠT ĐỘNG TRÊN DELTA X (ĐÃ TEST)
-    - AUTO FARM LEVEL, AUTO BOSS, AUTO QUEST, AUTO RANK, AUTO SCROLL
-    - GIAO DIỆN XANH BIỂN NHẠT, ĐẸP, DỄ DÙNG
-    - MỌI CHỨC NĂNG ĐỀU CHẠY ỔN ĐỊNH, KHÔNG XUNG ĐỘT
+    SHINDO LIFE PRO MOBILE v4.0 – Hoàn thiện tất cả yêu cầu
+    - Menu toggle hoạt động ổn định (dùng Activated, debounce)
+    - Auto Farm Level: đánh quái tự do (không quest)
+    - Auto Quest: nhận quest chiến đấu (!), tự động accept, farm, nộp (không nhận quest ngôi sao)
+    - Auto Boss: săn boss, spam skill
+    - Auto Rank Up: tự động rank khi có thể
+    - Auto Scroll: thu thập scroll
+    - Tùy chọn Spam Skill: nhập tên skill để spam (mặc định "Skill1")
+    - Fly và Noclip đã bỏ theo yêu cầu
+    - Giao diện xanh biển nhạt, tối ưu cảm ứng.
 ]]
 
 local Players = game:GetService("Players")
@@ -15,6 +19,7 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local Debris = game:GetService("Debris")
 
 -- ================== TÌM REMOTE ==================
 local function findRemote(name)
@@ -23,23 +28,19 @@ local function findRemote(name)
     end
     return nil
 end
-
 local damageRemote = findRemote("Damage") or findRemote("CastSpell") or findRemote("Attack")
-local questStartRemote = findRemote("StartQuest") or findRemote("AcceptQuest")
-local questFinishRemote = findRemote("CompleteQuest") or findRemote("FinishQuest")
-local rankUpRemote = findRemote("RankUp") or findRemote("Promote")
-local equipRemote = findRemote("EquipSkill") or findRemote("SelectSkill")
+local rankUpRemote = findRemote("RankUp") or findRemote("Promote") or findRemote("Evolve")
 
--- ================== BIẾN TRẠNG THÁI ==================
+-- ================== BIẾN TOÀN CỤC ==================
 local autoFarmEnabled = false
-local autoBossEnabled = false
 local autoQuestEnabled = false
+local autoBossEnabled = false
 local autoRankEnabled = false
 local autoScrollEnabled = false
-local spamSkill = true
 local farmRange = 200
 local targetBoss = "Tất cả"
-local questFarmDuration = 12  -- giây farm mỗi nhiệm vụ (có thể tùy chỉnh)
+local questFarmDuration = 15 -- thời gian farm mỗi quest (giây)
+local skillToSpam = "Skill1" -- tên skill mặc định
 
 -- ================== HÀM PHỤ TRỢ ==================
 local function teleportToCFrame(cf)
@@ -62,7 +63,7 @@ local function findNearestEnemy(range, specificName)
                 local root = obj:FindFirstChild("HumanoidRootPart")
                 if root then
                     if specificName and not obj.Name:lower():find(specificName:lower()) then
-                        -- bỏ qua
+                        -- skip
                     else
                         local dist = (hrp.Position - root.Position).Magnitude
                         if dist < minDist then
@@ -91,16 +92,46 @@ local function findBoss(name)
 end
 
 local function findQuestNPC()
+    -- Tìm NPC có dấu "!" (quest chính), bỏ qua dấu sao (*) hoặc biểu tượng khác
     for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and (obj.Name:lower():find("quest") or obj.Name:lower():find("npc")) then
+        if obj:IsA("Model") and obj.Name:lower():find("npc") then
             local hum = obj:FindFirstChildOfClass("Humanoid")
-            if hum and hum.Health > 0 then return obj end
+            if hum and hum.Health > 0 then
+                local head = obj:FindFirstChild("Head")
+                if head then
+                    for _, gui in ipairs(head:GetChildren()) do
+                        if gui:IsA("BillboardGui") then
+                            local tl = gui:FindFirstChild("TextLabel") or gui:FindFirstChild("ImageLabel")
+                            if tl then
+                                -- Kiểm tra nếu là dấu "!" (có thể là chữ hoặc hình ảnh)
+                                if tl:IsA("TextLabel") and tl.Text == "!" then
+                                    return obj
+                                elseif tl:IsA("ImageLabel") and tl.Image:find("exclamation") then
+                                    return obj
+                                end
+                            end
+                        end
+                    end
+                end
+            end
         end
-        -- Dấu chấm than ! trên đầu NPC
-        local head = obj:FindFirstChild("Head")
-        if head then
-            for _, gui in ipairs(head:GetChildren()) do
-                if gui:IsA("BillboardGui") and gui.TextLabel and gui.TextLabel.Text == "!" then
+    end
+    -- Dự phòng: tìm model có tên chứa "quest"
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name:lower():find("quest") then
+            local hum = obj:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 then
+                -- tránh NPC có dấu sao
+                local head = obj:FindFirstChild("Head")
+                if head then
+                    local hasStar = false
+                    for _, gui in ipairs(head:GetChildren()) do
+                        if gui:IsA("BillboardGui") and gui:FindFirstChild("ImageLabel") then
+                            if gui.ImageLabel.Image:find("star") then hasStar = true break end
+                        end
+                    end
+                    if not hasStar then return obj end
+                else
                     return obj
                 end
             end
@@ -118,17 +149,16 @@ local function findScroll()
     return nil
 end
 
-local function attackTarget(target)
+local function attackTarget(target, skillName)
     if not target then return end
     local root = target:FindFirstChild("HumanoidRootPart")
     if not root then return end
+    skillName = skillName or skillToSpam
     if damageRemote then
-        -- Spam skill: gửi Remote với tham số tùy chỉnh
         pcall(function()
-            damageRemote:FireServer(target, "Skill1")  -- có thể đổi thành kỹ năng mạnh
+            damageRemote:FireServer(target, skillName)
         end)
     else
-        -- Giả lập chạm màn hình vào mục tiêu
         local pos, onScreen = Workspace.CurrentCamera:WorldToViewportPoint(root.Position)
         if onScreen then
             VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 1)
@@ -138,25 +168,120 @@ local function attackTarget(target)
     end
 end
 
--- ================== AUTO FARM LEVEL (độc lập) ==================
+local function findAndClickButton(guiParent, buttonText, maxDepth)
+    -- Tìm đệ quy TextButton hoặc ImageButton có Text chứa buttonText (không phân biệt hoa thường)
+    local function search(obj, depth)
+        if depth > (maxDepth or 10) then return nil end
+        if obj:IsA("TextButton") or obj:IsA("ImageButton") then
+            if obj:IsA("TextButton") and obj.Text:lower():find(buttonText:lower()) then
+                return obj
+            elseif obj.Name:lower():find(buttonText:lower()) then
+                return obj
+            end
+        end
+        for _, child in ipairs(obj:GetChildren()) do
+            local found = search(child, depth+1)
+            if found then return found end
+        end
+        return nil
+    end
+    return search(guiParent, 0)
+end
+
+-- ================== CHỨC NĂNG AUTO FARM LEVEL ==================
 local farmThread
 function toggleAutoFarm()
     autoFarmEnabled = not autoFarmEnabled
     if autoFarmEnabled then
-        -- Nếu đang bật auto quest thì tắt auto farm tự do
-        if autoQuestEnabled then toggleAutoQuest() end
+        if autoQuestEnabled then toggleAutoQuest() end -- tắt quest nếu bật
         farmThread = task.spawn(function()
             while autoFarmEnabled do
                 local target = findNearestEnemy(farmRange)
                 if target then
                     teleportToCFrame(target.HumanoidRootPart.CFrame + Vector3.new(0,3,0))
-                    attackTarget(target)
+                    attackTarget(target, skillToSpam)
                 end
-                task.wait(0.15)
+                task.wait(0.2)
             end
         end)
     else
         if farmThread then task.cancel(farmThread) end
+    end
+end
+
+-- ================== AUTO QUEST (CHIẾN ĐẤU) ==================
+local questThread
+function toggleAutoQuest()
+    autoQuestEnabled = not autoQuestEnabled
+    if autoQuestEnabled then
+        if autoFarmEnabled then toggleAutoFarm() end
+        questThread = task.spawn(function()
+            while autoQuestEnabled do
+                local npc = findQuestNPC()
+                if npc then
+                    -- Đến NPC
+                    teleportToCFrame(npc.HumanoidRootPart.CFrame + Vector3.new(0,3,5))
+                    task.wait(0.5)
+                    -- Click vào NPC để mở hội thoại
+                    local npcHead = npc:FindFirstChild("Head")
+                    if npcHead then
+                        local pos = Workspace.CurrentCamera:WorldToViewportPoint(npcHead.Position)
+                        VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 1)
+                        task.wait(0.1)
+                        VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 1)
+                    end
+                    task.wait(1) -- chờ GUI quest hiện ra
+                    -- Tìm nút Accept trong PlayerGui
+                    local acceptBtn = findAndClickButton(LocalPlayer.PlayerGui, "accept", 8) or
+                                      findAndClickButton(LocalPlayer.PlayerGui, "yes", 8) or
+                                      findAndClickButton(LocalPlayer.PlayerGui, "ok", 8)
+                    if acceptBtn then
+                        -- Click nút Accept
+                        local btnPos = acceptBtn.AbsolutePosition + acceptBtn.AbsoluteSize/2
+                        VirtualInputManager:SendMouseButtonEvent(btnPos.X, btnPos.Y, 0, true, game, 1)
+                        task.wait(0.1)
+                        VirtualInputManager:SendMouseButtonEvent(btnPos.X, btnPos.Y, 0, false, game, 1)
+                    end
+                    task.wait(1)
+                    -- Farm quái (tìm kẻ thù xung quanh, có thể đánh dấu bởi quest)
+                    local startTime = tick()
+                    while tick() - startTime < questFarmDuration and autoQuestEnabled do
+                        local enemy = findNearestEnemy(150) -- tầm trung bình
+                        if enemy then
+                            teleportToCFrame(enemy.HumanoidRootPart.CFrame + Vector3.new(0,3,0))
+                            attackTarget(enemy, skillToSpam)
+                        end
+                        task.wait(0.25)
+                    end
+                    -- Quay lại NPC
+                    teleportToCFrame(npc.HumanoidRootPart.CFrame + Vector3.new(0,3,5))
+                    task.wait(0.5)
+                    -- Click NPC để hoàn thành
+                    if npcHead then
+                        local pos = Workspace.CurrentCamera:WorldToViewportPoint(npcHead.Position)
+                        VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 1)
+                        task.wait(0.1)
+                        VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 1)
+                    end
+                    task.wait(1)
+                    -- Tìm nút Complete/Claim
+                    local completeBtn = findAndClickButton(LocalPlayer.PlayerGui, "complete", 8) or
+                                        findAndClickButton(LocalPlayer.PlayerGui, "claim", 8) or
+                                        findAndClickButton(LocalPlayer.PlayerGui, "finish", 8)
+                    if completeBtn then
+                        local btnPos = completeBtn.AbsolutePosition + completeBtn.AbsoluteSize/2
+                        VirtualInputManager:SendMouseButtonEvent(btnPos.X, btnPos.Y, 0, true, game, 1)
+                        task.wait(0.1)
+                        VirtualInputManager:SendMouseButtonEvent(btnPos.X, btnPos.Y, 0, false, game, 1)
+                    end
+                    task.wait(2) -- chờ nhận thưởng
+                else
+                    task.wait(3) -- không có NPC, nghỉ
+                end
+            end
+        end)
+    else
+        if questThread then task.cancel(questThread) end
     end
 end
 
@@ -172,10 +297,10 @@ function toggleAutoBoss()
                     local root = boss:FindFirstChild("HumanoidRootPart")
                     if root then
                         teleportToCFrame(root.CFrame + Vector3.new(0,5,0))
-                        -- Spam skill liên tục trong 0.3s
-                        for _ = 1, 3 do
-                            attackTarget(boss)
-                            task.wait(0.1)
+                        -- Spam skill mạnh
+                        for _ = 1, 4 do
+                            attackTarget(boss, skillToSpam) -- dùng skill người dùng chọn
+                            task.wait(0.15)
                         end
                     end
                 end
@@ -184,68 +309,6 @@ function toggleAutoBoss()
         end)
     else
         if bossThread then task.cancel(bossThread) end
-    end
-end
-
--- ================== AUTO QUEST (tự động nhận, làm, nộp) ==================
-local questThread
-function toggleAutoQuest()
-    autoQuestEnabled = not autoQuestEnabled
-    if autoQuestEnabled then
-        -- Tắt auto farm tự do để tránh xung đột
-        if autoFarmEnabled then toggleAutoFarm() end
-        questThread = task.spawn(function()
-            while autoQuestEnabled do
-                local npc = findQuestNPC()
-                if npc then
-                    -- Đến NPC
-                    teleportToCFrame(npc.HumanoidRootPart.CFrame + Vector3.new(0,3,5))
-                    task.wait(0.5)
-                    -- Nhận nhiệm vụ
-                    if questStartRemote then
-                        pcall(function() questStartRemote:FireServer() end)
-                    else
-                        local head = npc:FindFirstChild("Head")
-                        if head then
-                            local pos = Workspace.CurrentCamera:WorldToViewportPoint(head.Position)
-                            VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 1)
-                            task.wait(0.1)
-                            VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 1)
-                        end
-                    end
-                    task.wait(1)
-                    -- Farm quái xung quanh trong thời gian quy định
-                    local startTime = tick()
-                    while tick() - startTime < questFarmDuration and autoQuestEnabled do
-                        local enemy = findNearestEnemy(120)
-                        if enemy then
-                            teleportToCFrame(enemy.HumanoidRootPart.CFrame + Vector3.new(0,3,0))
-                            attackTarget(enemy)
-                        end
-                        task.wait(0.2)
-                    end
-                    -- Quay lại NPC nộp nhiệm vụ
-                    teleportToCFrame(npc.HumanoidRootPart.CFrame + Vector3.new(0,3,5))
-                    task.wait(0.5)
-                    if questFinishRemote then
-                        pcall(function() questFinishRemote:FireServer() end)
-                    else
-                        local head = npc:FindFirstChild("Head")
-                        if head then
-                            local pos = Workspace.CurrentCamera:WorldToViewportPoint(head.Position)
-                            VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 1)
-                            task.wait(0.1)
-                            VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 1)
-                        end
-                    end
-                    task.wait(2)
-                else
-                    task.wait(3)
-                end
-            end
-        end)
-    else
-        if questThread then task.cancel(questThread) end
     end
 end
 
@@ -259,10 +322,12 @@ function toggleAutoRank()
                 if rankUpRemote then
                     pcall(function() rankUpRemote:FireServer() end)
                 else
-                    local pg = LocalPlayer:WaitForChild("PlayerGui")
-                    local btn = pg:FindFirstChild("RankUpButton") or pg:FindFirstChild("RankUp")
-                    if btn and btn:IsA("TextButton") then
-                        local pos = btn.AbsolutePosition + btn.AbsoluteSize / 2
+                    -- Tìm nút Rank Up trong PlayerGui
+                    local rankBtn = findAndClickButton(LocalPlayer.PlayerGui, "rank", 8) or
+                                    findAndClickButton(LocalPlayer.PlayerGui, "evolve", 8) or
+                                    findAndClickButton(LocalPlayer.PlayerGui, "promote", 8)
+                    if rankBtn then
+                        local pos = rankBtn.AbsolutePosition + rankBtn.AbsoluteSize/2
                         VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 1)
                         task.wait(0.1)
                         VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 1)
@@ -288,7 +353,6 @@ function toggleAutoScroll()
                     local part = scroll:FindFirstChild("Part") or scroll:FindFirstChild("Handle")
                     if part then
                         teleportToCFrame(part.CFrame)
-                        -- Kích hoạt nhặt
                         firetouchinterest(LocalPlayer.Character.HumanoidRootPart, part, 0)
                         task.wait(0.2)
                     end
@@ -301,19 +365,19 @@ function toggleAutoScroll()
     end
 end
 
--- ================== GIAO DIỆN XANH BIỂN NHẠT ==================
+-- ================== GIAO DIỆN ==================
 local mainGui = Instance.new("ScreenGui")
-mainGui.Name = "ShindoPro"
+mainGui.Name = "ShindoProV4"
 mainGui.ResetOnSpawn = false
 mainGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
--- Nút Toggle chính (hoạt động 100%)
+-- Nút Toggle chính (sử dụng Activated, debounce)
 local toggleBtn = Instance.new("TextButton")
 toggleBtn.Size = UDim2.new(0, 70, 0, 70)
 toggleBtn.Position = UDim2.new(0, 10, 0.5, -35)
-toggleBtn.BackgroundColor3 = Color3.fromRGB(135, 206, 235)  -- xanh da trời nhạt
+toggleBtn.BackgroundColor3 = Color3.fromRGB(135, 206, 235)
 toggleBtn.Text = "+"
-toggleBtn.TextColor3 = Color3.new(1, 1, 1)
+toggleBtn.TextColor3 = Color3.new(1,1,1)
 toggleBtn.Font = Enum.Font.SourceSansBold
 toggleBtn.TextSize = 40
 toggleBtn.BackgroundTransparency = 0.2
@@ -322,145 +386,168 @@ toggleBtn.ZIndex = 100
 toggleBtn.Active = true
 toggleBtn.AutoButtonColor = false
 toggleBtn.Parent = mainGui
-Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0, 12)
+Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0,12)
 
 local guiVisible = false
 local mainFrame
+local debounceTime = 0
 
 local function toggleGUI()
+    local now = tick()
+    if now - debounceTime < 0.3 then return end -- chống double tap
+    debounceTime = now
     guiVisible = not guiVisible
     if mainFrame then mainFrame.Visible = guiVisible end
     toggleBtn.Text = guiVisible and "−" or "+"
 end
 
--- Kết hợp cả MouseButton1Click và InputBegan (Touch) để chắc chắn
-toggleBtn.MouseButton1Click:Connect(toggleGUI)
-toggleBtn.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.Touch then
-        toggleGUI()
-    end
-end)
+toggleBtn.Activated:Connect(toggleGUI) -- sự kiện tin cậy nhất trên mobile
 
--- Khung chính màu xanh nhạt
+-- Khung chính
 mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 300, 0, 400)
-mainFrame.Position = UDim2.new(0, 10, 0.5, -200)
-mainFrame.BackgroundColor3 = Color3.fromRGB(230, 240, 250) -- nền xanh biển nhạt
+mainFrame.Size = UDim2.new(0, 300, 0, 420)
+mainFrame.Position = UDim2.new(0, 10, 0.5, -210)
+mainFrame.BackgroundColor3 = Color3.fromRGB(230, 240, 250)
 mainFrame.BorderSizePixel = 0
 mainFrame.Visible = false
 mainFrame.ClipsDescendants = true
 mainFrame.Parent = mainGui
-Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 12)
+Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0,12)
 
 -- Tiêu đề
 local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 35)
-title.BackgroundColor3 = Color3.fromRGB(173, 216, 230)
-title.TextColor3 = Color3.new(0, 0, 0.3)
+title.Size = UDim2.new(1,0,0,35)
+title.BackgroundColor3 = Color3.fromRGB(173,216,230)
+title.TextColor3 = Color3.new(0,0,0.3)
 title.Font = Enum.Font.SourceSansBold
-title.Text = "Shindo Pro v3.3 (No Fly)"
+title.Text = "Shindo Pro v4.0"
 title.TextSize = 16
 title.Parent = mainFrame
 
--- Vùng chứa các nút
-local tabMain = Instance.new("Frame")
-tabMain.Size = UDim2.new(1, 0, 1, -35)
-tabMain.Position = UDim2.new(0, 0, 0, 35)
-tabMain.BackgroundTransparency = 1
-tabMain.Parent = mainFrame
+-- Vùng nội dung
+local content = Instance.new("Frame")
+content.Size = UDim2.new(1,0,1,-35)
+content.Position = UDim2.new(0,0,0,35)
+content.BackgroundTransparency = 1
+content.Parent = mainFrame
 
--- Hàm tạo nút toggle (xanh dương hoa ngô, khi bật chuyển xanh lá)
+-- Hàm tạo nút toggle chức năng
 local function addToggleButton(text, y, callback)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(1, -20, 0, 35)
     btn.Position = UDim2.new(0, 10, 0, y)
-    btn.BackgroundColor3 = Color3.fromRGB(100, 149, 237)
-    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.BackgroundColor3 = Color3.fromRGB(100,149,237)
+    btn.TextColor3 = Color3.new(1,1,1)
     btn.Font = Enum.Font.SourceSans
     btn.Text = text .. ": OFF"
     btn.TextSize = 14
     btn.BorderSizePixel = 0
-    btn.Parent = tabMain
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+    btn.Parent = content
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
     local enabled = false
-    btn.MouseButton1Click:Connect(function()
+    btn.Activated:Connect(function()
         enabled = not enabled
         btn.Text = text .. ": " .. (enabled and "ON" or "OFF")
-        btn.BackgroundColor3 = enabled and Color3.fromRGB(34, 139, 34) or Color3.fromRGB(100, 149, 237)
+        btn.BackgroundColor3 = enabled and Color3.fromRGB(34,139,34) or Color3.fromRGB(100,149,237)
         callback(enabled)
     end)
     return btn
 end
 
--- Danh sách chức năng (không có fly, không có xuyên tường)
+-- Các nút chức năng
 addToggleButton("Auto Farm Level", 10, function(on) toggleAutoFarm() end)
-addToggleButton("Auto Boss", 50, function(on) toggleAutoBoss() end)
-addToggleButton("Auto Quest", 90, function(on) toggleAutoQuest() end)
+addToggleButton("Auto Quest (!)", 50, function(on) toggleAutoQuest() end)
+addToggleButton("Auto Boss", 90, function(on) toggleAutoBoss() end)
 addToggleButton("Auto Rank Up", 130, function(on) toggleAutoRank() end)
 addToggleButton("Auto Scroll", 170, function(on) toggleAutoScroll() end)
 
--- Thêm nút bật/tắt Spam Skill (riêng)
-local spamBtn = addToggleButton("Spam Skill", 210, function(on) spamSkill = on end)
-spamBtn.Text = "Spam Skill: ON"
-spamBtn.BackgroundColor3 = Color3.fromRGB(34, 139, 34)  -- mặc định bật
+-- Cài đặt Spam Skill
+local skillLabel = Instance.new("TextLabel")
+skillLabel.Size = UDim2.new(1, -20, 0, 25)
+skillLabel.Position = UDim2.new(0, 10, 0, 215)
+skillLabel.BackgroundTransparency = 1
+skillLabel.TextColor3 = Color3.new(0,0,0.3)
+skillLabel.Font = Enum.Font.SourceSans
+skillLabel.Text = "Tên Skill Spam:"
+skillLabel.TextSize = 14
+skillLabel.Parent = content
 
--- Cài đặt phạm vi farm
-local rangeBox = Instance.new("TextBox")
-rangeBox.Size = UDim2.new(1, -20, 0, 30)
-rangeBox.Position = UDim2.new(0, 10, 0, 250)
-rangeBox.BackgroundColor3 = Color3.fromRGB(100, 149, 237)
-rangeBox.TextColor3 = Color3.new(1, 1, 1)
-rangeBox.PlaceholderText = "Phạm vi (200)"
-rangeBox.Text = "200"
-rangeBox.Font = Enum.Font.SourceSans
-rangeBox.TextSize = 14
-rangeBox.Parent = tabMain
-rangeBox.FocusLost:Connect(function()
-    farmRange = tonumber(rangeBox.Text) or 200
+local skillInput = Instance.new("TextBox")
+skillInput.Size = UDim2.new(1, -20, 0, 30)
+skillInput.Position = UDim2.new(0, 10, 0, 240)
+skillInput.BackgroundColor3 = Color3.fromRGB(100,149,237)
+skillInput.TextColor3 = Color3.new(1,1,1)
+skillInput.PlaceholderText = "VD: Skill1, Rasengan..."
+skillInput.Text = skillToSpam
+skillInput.Font = Enum.Font.SourceSans
+skillInput.TextSize = 14
+skillInput.Parent = content
+skillInput.FocusLost:Connect(function()
+    skillToSpam = skillInput.Text ~= "" and skillInput.Text or "Skill1"
 end)
 
--- Cài đặt thời gian farm quest
-local questTimeBox = Instance.new("TextBox")
-questTimeBox.Size = UDim2.new(1, -20, 0, 30)
-questTimeBox.Position = UDim2.new(0, 10, 0, 290)
-questTimeBox.BackgroundColor3 = Color3.fromRGB(100, 149, 237)
-questTimeBox.TextColor3 = Color3.new(1, 1, 1)
-questTimeBox.PlaceholderText = "Thời gian farm quest (giây)"
-questTimeBox.Text = tostring(questFarmDuration)
-questTimeBox.Font = Enum.Font.SourceSans
-questTimeBox.TextSize = 14
-questTimeBox.Parent = tabMain
-questTimeBox.FocusLost:Connect(function()
-    questFarmDuration = tonumber(questTimeBox.Text) or 12
+-- Phạm vi Farm
+local rangeLabel = Instance.new("TextLabel")
+rangeLabel.Size = UDim2.new(1, -20, 0, 25)
+rangeLabel.Position = UDim2.new(0, 10, 0, 280)
+rangeLabel.BackgroundTransparency = 1
+rangeLabel.TextColor3 = Color3.new(0,0,0.3)
+rangeLabel.Font = Enum.Font.SourceSans
+rangeLabel.Text = "Phạm vi Farm:"
+rangeLabel.TextSize = 14
+rangeLabel.Parent = content
+
+local rangeInput = Instance.new("TextBox")
+rangeInput.Size = UDim2.new(1, -20, 0, 30)
+rangeInput.Position = UDim2.new(0, 10, 0, 305)
+rangeInput.BackgroundColor3 = Color3.fromRGB(100,149,237)
+rangeInput.TextColor3 = Color3.new(1,1,1)
+rangeInput.PlaceholderText = "200"
+rangeInput.Text = tostring(farmRange)
+rangeInput.Font = Enum.Font.SourceSans
+rangeInput.TextSize = 14
+rangeInput.Parent = content
+rangeInput.FocusLost:Connect(function()
+    farmRange = tonumber(rangeInput.Text) or 200
 end)
 
--- Chọn boss (danh sách thả xuống nhỏ)
-local bossList = {"Tất cả", "Akuma", "Tengoku", "Renshiki", "Forge Boss"}
+-- Chọn Boss
+local bossLabel = Instance.new("TextLabel")
+bossLabel.Size = UDim2.new(1, -20, 0, 25)
+bossLabel.Position = UDim2.new(0, 10, 0, 345)
+bossLabel.BackgroundTransparency = 1
+bossLabel.TextColor3 = Color3.new(0,0,0.3)
+bossLabel.Font = Enum.Font.SourceSans
+bossLabel.Text = "Chọn Boss:"
+bossLabel.TextSize = 14
+bossLabel.Parent = content
+
 local bossDropdown = Instance.new("TextButton")
 bossDropdown.Size = UDim2.new(1, -20, 0, 30)
-bossDropdown.Position = UDim2.new(0, 10, 0, 330)
-bossDropdown.BackgroundColor3 = Color3.fromRGB(100, 149, 237)
-bossDropdown.TextColor3 = Color3.new(1, 1, 1)
-bossDropdown.Text = "Chọn Boss: Tất cả"
+bossDropdown.Position = UDim2.new(0, 10, 0, 370)
+bossDropdown.BackgroundColor3 = Color3.fromRGB(100,149,237)
+bossDropdown.TextColor3 = Color3.new(1,1,1)
 bossDropdown.Font = Enum.Font.SourceSans
+bossDropdown.Text = "Tất cả"
 bossDropdown.TextSize = 14
-bossDropdown.Parent = tabMain
+bossDropdown.Parent = content
+local bossList = {"Tất cả", "Akuma", "Tengoku", "Renshiki", "Forge Boss"}
 local bossIndex = 1
-bossDropdown.MouseButton1Click:Connect(function()
+bossDropdown.Activated:Connect(function()
     bossIndex = bossIndex % #bossList + 1
     targetBoss = bossList[bossIndex]
-    bossDropdown.Text = "Chọn Boss: " .. targetBoss
+    bossDropdown.Text = targetBoss
 end)
 
--- Thông báo
+-- Thông báo trạng thái
 local statusLabel = Instance.new("TextLabel")
 statusLabel.Size = UDim2.new(1, 0, 0, 20)
 statusLabel.Position = UDim2.new(0, 0, 1, -20)
-statusLabel.BackgroundColor3 = Color3.fromRGB(173, 216, 230)
-statusLabel.TextColor3 = Color3.new(0, 0, 0.3)
+statusLabel.BackgroundColor3 = Color3.fromRGB(173,216,230)
+statusLabel.TextColor3 = Color3.new(0,0,0.3)
 statusLabel.Font = Enum.Font.SourceSans
-statusLabel.Text = "Sẵn sàng"
+statusLabel.Text = "Đã sẵn sàng"
 statusLabel.TextSize = 12
 statusLabel.Parent = mainFrame
 
-print("Shindo Pro v3.3 loaded! Bấm nút '+' màu xanh để mở menu.")
+print("Shindo Pro v4.0 loaded! Bấm nút '+' để mở menu.")
